@@ -37,9 +37,24 @@ const intakeLimiter = rateLimit({
   message: { protocol: 'escalatex/0.1', status: 'busy', reason: 'rate_limited', message: 'Too many requests. Try again later.' },
 });
 
+app.get('/styles.css', (_req, res) => {
+  res.setHeader('Content-Type', 'text/css; charset=utf-8');
+  res.sendFile(new URL('./styles.css', import.meta.url).pathname);
+});
+
 app.get('/', (_req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.sendFile(new URL('./ui.html', import.meta.url).pathname);
+});
+
+app.get('/request', (_req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.sendFile(new URL('./request.html', import.meta.url).pathname);
+});
+
+app.get('/@:handle', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.sendFile(new URL('./profile.html', import.meta.url).pathname);
 });
 
 app.get('/r/:id', (_req, res) => {

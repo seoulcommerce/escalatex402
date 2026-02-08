@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Create request — Escalatex</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <div class="h1">Create an escalation request</div>
+          <div class="tag" id="endpointTag">Loading…</div>
+        </div>
+      </div>
+      <div class="row">
+        <a class="btn ghost" id="backBtn" href="/">Back</a>
+        <a class="btn" id="profileBtn" href="/">Provider</a>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <form id="form">
+          <label>Subject</label>
+          <input id="subject" required maxlength="200" placeholder="e.g. Urgent: payments failing on checkout" />
+
+          <label>Details</label>
+          <textarea id="details" required maxlength="10000" placeholder="Context, links, logs, expected behavior, constraints…"></textarea>
+
+          <label>Tier</label>
+          <select id="tier"></select>
+
+          <div class="row" style="margin-top:12px">
+            <button class="btn primary" id="submitBtn" type="submit">Submit request</button>
+            <button class="btn ghost" id="resetBtn" type="button">Reset</button>
+          </div>
+
+          <div id="status" style="margin-top:12px"></div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="h1" style="font-size:16px;margin-bottom:8px">Payment</div>
+        <div id="payBox" class="alert">
+          <div class="small">Submit a request to get a payment link/quote.</div>
+        </div>
+        <div style="height:10px"></div>
+        <div class="h1" style="font-size:16px;margin-bottom:8px">Receipt</div>
+        <div id="receiptBox" class="alert">
+          <div class="small">Receipt link will appear after submit.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">Tip: after payment, click “Check payment” — or paste a tx signature and confirm.</div>
+  </div>
+
+<script>
+  const qs = new URLSearchParams(location.search);
+  const handle = qs.get('handle') || '';
+  const baseUrl = location.origin;
+
+  function esc(s){return String(s).replace(/[&<>\"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+  function uuid(){ return (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random().toString(16).slice(2)); }
+
+  let capabilities = null;
+  let lastRequest = null;
+
+  function setStatus(kind, html){
+    const el = document.getElementById('status');
+    el.innerHTML = `<div class="alert ${kind}">${html}</div>`;
+  }
+
+  function setPayBox(kind, html){
+    const el = document.getElementById('payBox');
+    el.className = `alert ${kind||''}`;
+    el.innerHTML = html;
+  }
+
+  function setReceiptBox(kind, html){
+    const el = document.getElementById('receiptBox');
+    el.className = `alert ${kind||''}`;
+    el.innerHTML = html;
+  }
+
+  async function loadCaps(){
+    const res = await fetch('/.well-known/escalatex');
+    capabilities = await res.json();
+
+    const h = capabilities.provider?.handle || handle || 'provider';
+    document.getElementById('endpointTag').textContent = `${baseUrl}/.well-known/escalatex • @${h}`;
+    document.getElementById('profileBtn').href = `/@${encodeURIComponent(h)}`;
+
+    const tierSel = document.getElementById('tier');
+    tierSel.innerHTML = '';
+    (capabilities.tiers || []).forEach((t, idx)=>{
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = `${t.label} — ${t.price?.amount} ${t.price?.currency}`;
+      if (idx===0) opt.selected = true;
+      tierSel.appendChild(opt);
+    });
+  }
+
+  async function submitReq(){
+    const idem = uuid();
+    document.getElementById('submitBtn').disabled = true;
+
+    try {
+      const body = {
+        subject: document.getElementById('subject').value,
+        details: document.getElementById('details').value,
+        desired_tier: document.getElementById('tier').value,
+      };
+
+      const r = await fetch('/.well-known/escalatex', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idem },
+        body: JSON.stringify(body),
+      });
+
+      const j = await r.json();
+      lastRequest = j;
+
+      if (r.status === 409 || j.status === 'busy') {
+        setStatus('bad', `<strong>Busy</strong><div class="small">${esc(j.message || 'Provider unavailable')}</div>`);
+        setPayBox('', `<div class="small">Try again later, or use an interrupt tier if offered.</div>`);
+        return;
+      }
+
+      if (j.status === 'accepted') {
+        setStatus('good', `<strong>Accepted</strong><div class="small">${esc(j.message || 'Request accepted.')}</div>`);
+      }
+
+      if (j.status === 'requires_payment') {
+        const payUrl = j.payment?.pay_url;
+        const receiptUrl = j.request?.receipt_url;
+
+        setStatus('', `<strong>Payment required</strong><div class="small">Pay to escalate and notify the provider.</div>`);
+
+        setReceiptBox('', `<div class="small">Receipt:</div><div><a class="mono" href="${esc(receiptUrl)}" target="_blank">${esc(receiptUrl)}</a></div>`);
+
+        setPayBox('', `
+          <div class="small">Amount:</div>
+          <div><strong>${esc(j.payment?.amount)} ${esc(j.payment?.currency)}</strong></div>
+          <div class="small" style="margin-top:8px">Solana Pay URL:</div>
+          <div class="mono" style="word-break:break-all">${esc(payUrl || '')}</div>
+          <div class="row" style="margin-top:10px">
+            <a class="btn primary" href="${esc(payUrl || '#')}" target="_blank" ${payUrl?"":"style='pointer-events:none;opacity:.6'"}>Open payment link</a>
+            <button class="btn" id="checkBtn" type="button">Check payment</button>
+          </div>
+          <div class="small" style="margin-top:10px">Have a tx signature?</div>
+          <div class="row">
+            <input id="txSig" placeholder="Paste tx signature" class="mono" />
+            <button class="btn" id="confirmBtn" type="button">Confirm</button>
+          </div>
+        `);
+
+        // wire buttons
+        document.getElementById('checkBtn').onclick = checkPayment;
+        document.getElementById('confirmBtn').onclick = confirmPaid;
+      }
+
+    } catch (e) {
+      setStatus('bad', `<strong>Error</strong><div class="small">${esc(e.message || String(e))}</div>`);
+    } finally {
+      document.getElementById('submitBtn').disabled = false;
+    }
+  }
+
+  async function checkPayment(){
+    const id = lastRequest?.request?.id;
+    if (!id) return;
+    const r = await fetch(`/requests/${encodeURIComponent(id)}/check`, { method: 'POST' });
+    const j = await r.json().catch(()=>({}));
+    if (r.ok && j.status === 'paid') {
+      setStatus('good', `<strong>Paid</strong><div class="small">Provider notified. Receipt: <a href="/r/${esc(id)}" target="_blank">/r/${esc(id)}</a></div>`);
+      setPayBox('good', `<div><strong>Payment verified.</strong></div><div class="small">Tx: <span class="mono">${esc(j.receipt?.txSig || '')}</span></div>`);
+      return;
+    }
+    setStatus('', `<strong>Awaiting payment</strong><div class="small">No matching tx found yet. Try again in ~10–20s.</div>`);
+  }
+
+  async function confirmPaid(){
+    const id = lastRequest?.request?.id;
+    const txSig = document.getElementById('txSig')?.value?.trim();
+    if (!id || !txSig) return;
+    const r = await fetch(`/requests/${encodeURIComponent(id)}/confirm-paid`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ txSig }),
+    });
+    const j = await r.json().catch(()=>({}));
+    if (r.ok && j.status === 'paid') {
+      setStatus('good', `<strong>Paid</strong><div class="small">Verified by signature.</div>`);
+      setPayBox('good', `<div><strong>Payment verified.</strong></div><div class="small">Tx: <span class="mono">${esc(txSig)}</span></div>`);
+      return;
+    }
+    setStatus('bad', `<strong>Verification failed</strong><div class="small">${esc(j.error || 'unknown_error')}</div>`);
+  }
+
+  document.getElementById('form').addEventListener('submit', (e)=>{
+    e.preventDefault();
+    submitReq();
+  });
+
+  document.getElementById('resetBtn').onclick = ()=>{
+    document.getElementById('subject').value='';
+    document.getElementById('details').value='';
+    setStatus('', '');
+    setPayBox('', '<div class="small">Submit a request to get a payment link/quote.</div>');
+    setReceiptBox('', '<div class="small">Receipt link will appear after submit.</div>');
+  };
+
+  loadCaps().catch((e)=>{
+    document.getElementById('endpointTag').textContent = 'Failed to load provider capabilities';
+    setStatus('bad', esc(e.message || String(e)));
+  });
+</script>
+</body>
+</html>
