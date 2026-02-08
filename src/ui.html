@@ -1,0 +1,121 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Escalatex402</title>
+    <style>
+      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 24px; max-width: 860px; }
+      .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin: 16px 0; }
+      label { display:block; font-weight: 600; margin: 10px 0 6px; }
+      input, textarea { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; }
+      button { padding: 10px 14px; border-radius: 8px; border: 1px solid #111827; background: #111827; color: #fff; cursor: pointer; }
+      button.secondary { background: #fff; color: #111827; }
+      code { background: #f3f4f6; padding: 2px 6px; border-radius: 6px; }
+      .row { display:flex; gap: 10px; flex-wrap: wrap; }
+      .row > * { flex: 1; min-width: 240px; }
+      .muted { color: #6b7280; }
+    </style>
+  </head>
+  <body>
+    <h1>Escalatex402</h1>
+    <p class="muted">Paid escalation for in-demand devs. Submit a request → get an x402 payment handshake → pay on Solana → provider gets notified on Telegram.</p>
+
+    <div class="card">
+      <h2>Create request</h2>
+      <label>Title</label>
+      <input id="title" value="Need help debugging a Solana paywall" />
+      <label>Body</label>
+      <textarea id="body" rows="4">My agent got a 402 payment_required but can't verify the Solana payment.</textarea>
+      <div class="row">
+        <div>
+          <label>Tags (comma)</label>
+          <input id="tags" value="payments,solana,ai" />
+        </div>
+        <div>
+          <label>Budget (USD)</label>
+          <input id="budget" value="30" />
+        </div>
+      </div>
+      <div style="margin-top:12px;">
+        <button id="createBtn">Create</button>
+      </div>
+      <pre id="createOut"></pre>
+    </div>
+
+    <div class="card">
+      <h2>Request status</h2>
+      <label>Request ID</label>
+      <input id="rid" placeholder="paste requestId" />
+      <div style="margin-top:12px;" class="row">
+        <button class="secondary" id="refreshBtn">Refresh</button>
+        <button class="secondary" id="openPayBtn" disabled>Open Solana Pay link</button>
+        <button class="secondary" id="checkBtn" disabled>Check payment (scan chain)</button>
+      </div>
+      <div id="payInfo" style="margin-top:10px;"></div>
+      <pre id="statusOut"></pre>
+    </div>
+
+    <script>
+      const api = '';
+      const el = (id) => document.getElementById(id);
+
+      let lastPayment = null;
+
+      el('createBtn').onclick = async () => {
+        const title = el('title').value;
+        const body = el('body').value;
+        const tags = el('tags').value.split(',').map(s=>s.trim()).filter(Boolean);
+        const budgetUsd = el('budget').value;
+
+        const res = await fetch(api + '/requests', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, body, tags, budgetUsd })
+        });
+        const json = await res.json();
+        el('createOut').textContent = JSON.stringify(json, null, 2);
+        if (json.requestId) {
+          el('rid').value = json.requestId;
+          await refresh();
+        }
+      };
+
+      async function refresh() {
+        const rid = el('rid').value.trim();
+        if (!rid) return;
+        const res = await fetch(api + '/requests/' + rid);
+        const json = await res.json();
+        el('statusOut').textContent = `HTTP ${res.status}\n` + JSON.stringify(json, null, 2);
+
+        lastPayment = json.payment || json.payment?.payment || json.paymentRequired || json?.payment;
+        // Our API nests payment under json.payment in 402 responses.
+        const payment = json.payment?.payment ? json.payment.payment : json.payment;
+
+        if (res.status === 402 && payment && payment.pay_url) {
+          el('openPayBtn').disabled = false;
+          el('checkBtn').disabled = false;
+          el('payInfo').innerHTML = `Pay <code>${payment.amount} ${payment.token}</code> to <code>${payment.recipient}</code><br/>Memo: <code>${payment.memo}</code>`;
+          el('openPayBtn').onclick = () => window.open(payment.pay_url, '_blank');
+        } else {
+          el('openPayBtn').disabled = true;
+          el('checkBtn').disabled = true;
+          el('payInfo').innerHTML = '';
+        }
+      }
+
+      el('refreshBtn').onclick = refresh;
+
+      el('checkBtn').onclick = async () => {
+        const rid = el('rid').value.trim();
+        if (!rid) return;
+        const res = await fetch(api + '/requests/' + rid + '/check', { method: 'POST' });
+        const json = await res.json();
+        el('statusOut').textContent = `HTTP ${res.status}\n` + JSON.stringify(json, null, 2);
+      };
+
+      // initial
+      refresh();
+    </script>
+  </body>
+</html>

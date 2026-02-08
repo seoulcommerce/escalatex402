@@ -28,12 +28,16 @@ export function initDb() {
       paymentToken TEXT,
       payTo TEXT,
       paymentReference TEXT,
+      paymentMemo TEXT,
       paidTxSig TEXT,
       paidAt INTEGER
     );
 
     CREATE INDEX IF NOT EXISTS idx_requests_status ON requests(status);
   `);
+
+  // Lightweight migrations (best-effort).
+  try { d.exec('ALTER TABLE requests ADD COLUMN paymentMemo TEXT'); } catch {}
 }
 
 export function run(sql, params = []) {

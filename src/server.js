@@ -7,12 +7,18 @@ import { initDb, run, get, all } from './db.js';
 import { getProvider, evaluateRequest } from './providers.js';
 import { build402Payload } from './x402.js';
 import { verifyUsdcPayment } from './solanaVerify.js';
+import { buildSolanaPayUrl, makePaymentMemo, makeReferencePubkey, USDC_MINT } from './solanaPay.js';
 
 initDb();
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
+
+app.get('/', (_req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.sendFile(new URL('./ui.html', import.meta.url).pathname);
+});
 
 app.get('/health', async (_req, res) => {
   const count = await get('SELECT COUNT(*) as c FROM requests');
@@ -56,12 +62,23 @@ app.post('/requests', async (req, res) => {
   }
 
   // Prepare payment-required state.
-  const reference = crypto.randomBytes(16).toString('hex');
+  const reference = makeReferencePubkey();
   const expiresAt = Date.now() + 15 * 60 * 1000; // 15 min
+  const memo = makePaymentMemo({ requestId: id, reference });
+
+  const payUrl = buildSolanaPayUrl({
+    recipient: provider.solanaPayTo,
+    amount: decision.quoteUsd,
+    reference,
+    memo,
+    mint: USDC_MINT,
+    label: 'Escalatex402',
+    message: `Request ${id}`,
+  });
 
   await run(
-    `INSERT INTO requests(id, createdAt, status, title, body, tags, budgetUsd, providerId, quoteUsd, quoteMessage, paymentToken, payTo, paymentReference)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO requests(id, createdAt, status, title, body, tags, budgetUsd, providerId, quoteUsd, quoteMessage, paymentToken, payTo, paymentReference, paymentMemo)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       id,
       createdAt,
@@ -76,6 +93,7 @@ app.post('/requests', async (req, res) => {
       provider.defaultToken,
       provider.solanaPayTo,
       reference,
+      memo,
     ]
   );
 
@@ -85,7 +103,11 @@ app.post('/requests', async (req, res) => {
     token: provider.defaultToken,
     payTo: provider.solanaPayTo,
     reference,
+    memo,
+    mint: USDC_MINT,
+    payUrl,
     expiresAt,
+    retryUrl: `/requests/${id}`,
   });
 
   return res.status(201).json({ ok: true, requestId: id, status: 'awaiting_payment', quoteUsd: decision.quoteUsd, payment });
@@ -103,13 +125,27 @@ app.get('/requests/:id', async (req, res) => {
   const tags = safeJson(row.tags, []);
 
   if (row.status === 'awaiting_payment') {
+    const payUrl = buildSolanaPayUrl({
+      recipient: row.payTo,
+      amount: row.quoteUsd,
+      reference: row.paymentReference,
+      memo: row.paymentMemo,
+      mint: USDC_MINT,
+      label: 'Escalatex402',
+      message: `Request ${row.id}`,
+    });
+
     const payment = build402Payload({
       requestId: row.id,
       amountUsd: row.quoteUsd,
       token: row.paymentToken,
       payTo: row.payTo,
       reference: row.paymentReference,
+      memo: row.paymentMemo,
+      mint: USDC_MINT,
+      payUrl,
       expiresAt: null,
+      retryUrl: `/requests/${row.id}`,
     });
 
     // x402 style: 402 with machine-readable body.
@@ -160,6 +196,8 @@ app.post('/requests/:id/confirm-paid', async (req, res) => {
       txSig: parsed.data.txSig,
       payTo,
       expectedAmountUsdc: expected,
+      requiredMemo: row.paymentMemo,
+      requiredReference: row.paymentReference,
     });
 
     if (!v.ok) {
@@ -177,6 +215,40 @@ app.post('/requests/:id/confirm-paid', async (req, res) => {
   console.log('[escalate402] paid+verified:', row.id, parsed.data.txSig);
 
   return res.json({ ok: true, status: 'paid' });
+});
+
+app.post('/requests/:id/check', async (req, res) => {
+  const row = await get('SELECT * FROM requests WHERE id = ?', [req.params.id]);
+  if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
+  if (row.status === 'paid' || row.status === 'paid_notified') {
+    return res.json({ ok: true, status: row.status, receipt: { txSig: row.paidTxSig, paidAt: row.paidAt } });
+  }
+  if (row.status !== 'awaiting_payment') {
+    return res.status(400).json({ ok: false, error: 'not_awaiting_payment', status: row.status });
+  }
+
+  const { scanForPayment } = await import('./solanaScan.js');
+  const expected = row.quoteUsd ? String(row.quoteUsd) : null;
+  if (!expected || !row.payTo) return res.status(400).json({ ok: false, error: 'missing_expected_payment' });
+
+  const found = await scanForPayment({
+    payTo: row.payTo,
+    expectedAmountUsdc: expected,
+    requiredMemo: row.paymentMemo,
+    requiredReference: row.paymentReference,
+    limit: 25,
+  });
+
+  if (!found.ok) {
+    return res.status(404).json({ ok: false, status: 'awaiting_payment', scan: found });
+  }
+
+  await run(
+    'UPDATE requests SET status = ?, paidTxSig = ?, paidAt = ? WHERE id = ?',
+    ['paid', found.txSig, Date.now(), row.id]
+  );
+
+  return res.json({ ok: true, status: 'paid', receipt: { txSig: found.txSig } });
 });
 
 app.get('/admin/requests', async (req, res) => {
