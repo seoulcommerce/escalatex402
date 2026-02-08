@@ -18,7 +18,7 @@ npm run dev
 
 ## Well-known protocol (what agents should use)
 
-The protocol spec lives at: `docs/spec.md`.
+The protocol spec lives at: `docs/spec/0.1.md`.
 
 Additional docs:
 - Support matrix: `docs/support-matrix.md`
