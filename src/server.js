@@ -79,6 +79,12 @@ app.get('/login', (_req, res) => {
   res.sendFile(new URL('./login.html', import.meta.url).pathname);
 });
 
+app.get('/dashboard', async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.sendFile(new URL('./dashboard.html', import.meta.url).pathname);
+});
+
 app.post('/auth/request', async (_req, res) => {
   const { requestLoginLink } = await import('./auth.js');
   const out = await requestLoginLink();
@@ -653,7 +659,17 @@ app.post('/webhooks/helius', async (req, res) => {
 
 app.get('/admin/requests', async (req, res) => {
   if (!(await requireAdmin(req, res))) return;
-  const rows = await all('SELECT id, createdAt, status, title, providerId, quoteUsd, paidAt, acknowledgedAt, completedAt, refundedAt FROM requests ORDER BY createdAt DESC LIMIT 100');
+
+  const status = String(req.query.status || '').trim();
+  const params = [];
+  let sql = 'SELECT id, createdAt, status, title, providerId, quoteUsd, paidAt, acknowledgedAt, completedAt, refundedAt FROM requests';
+  if (status) {
+    sql += ' WHERE status = ?';
+    params.push(status);
+  }
+  sql += ' ORDER BY createdAt DESC LIMIT 100';
+
+  const rows = await all(sql, params);
   res.json({ ok: true, requests: rows });
 });
 

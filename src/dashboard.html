@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard — Escalatex</title>
+  <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">
+        <div class="logo img"><img alt="Escalatex" src="/logo.svg" /></div>
+        <div>
+          <div class="h1">Provider dashboard</div>
+          <div class="tag" id="tag">Inbox</div>
+        </div>
+      </div>
+      <div class="row">
+        <a class="btn ghost" href="/">Home</a>
+        <button class="btn" id="refreshBtn" type="button">Refresh</button>
+        <button class="btn" id="logoutBtn" type="button">Logout</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <div class="row">
+          <span class="pill">Filter:</span>
+          <select id="filter" style="max-width:260px">
+            <option value="">All</option>
+            <option value="awaiting_payment">awaiting_payment</option>
+            <option value="paid">paid</option>
+            <option value="acknowledged">acknowledged</option>
+            <option value="completed">completed</option>
+            <option value="refunded">refunded</option>
+          </select>
+        </div>
+        <div class="pill" id="count">—</div>
+      </div>
+
+      <div style="height:10px"></div>
+      <div id="out" class="small">Loading…</div>
+    </div>
+
+    <div class="footer">Tip: set <span class="mono">AUTH_ENABLED=1</span> + Telegram notifier to use login links.</div>
+  </div>
+
+<script>
+  function esc(s){return String(s).replace(/[&<>\"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+
+  const out = document.getElementById('out');
+  const count = document.getElementById('count');
+
+  function fmtAgo(ts){
+    if (!ts) return '';
+    const d = Date.now() - Number(ts);
+    const m = Math.floor(d/60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m/60);
+    if (h < 48) return `${h}h ago`;
+    const days = Math.floor(h/24);
+    return `${days}d ago`;
+  }
+
+  function rowHtml(r){
+    const receipt = `/r/${encodeURIComponent(r.id)}`;
+    const pill = `<span class="pill mono">${esc(r.status)}</span>`;
+    const when = `<span class="pill">${esc(fmtAgo(r.createdAt))}</span>`;
+    const quote = r.quoteUsd ? `<span class="pill">${esc(r.quoteUsd)} USDC</span>` : '';
+    return `
+      <div class="alert" style="margin-top:10px">
+        <div class="row" style="justify-content:space-between">
+          <div style="min-width:0">
+            <div style="font-weight:800">${esc(r.title || '(no title)')}</div>
+            <div class="small mono" style="overflow:hidden;text-overflow:ellipsis">${esc(r.id)}</div>
+          </div>
+          <div class="row">${pill}${quote}${when}</div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <a class="btn" href="${receipt}" target="_blank">Receipt</a>
+          <a class="btn ghost" href="/admin/requests/${encodeURIComponent(r.id)}" target="_blank">JSON</a>
+        </div>
+      </div>
+    `;
+  }
+
+  async function load(){
+    out.textContent = 'Loading…';
+    const status = document.getElementById('filter').value;
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+
+    const r = await fetch(`/admin/requests${q}`);
+    const j = await r.json().catch(()=>({}));
+    if (!r.ok) {
+      if (r.status === 401) {
+        out.innerHTML = `<div class="alert bad"><strong>Unauthorized</strong><div class="small">Go to <a href="/login">/login</a> to get a login link, or set ADMIN_SECRET for self-host.</div></div>`;
+        count.textContent = '—';
+        return;
+      }
+      out.innerHTML = `<div class="alert bad"><strong>Error</strong><div class="small">${esc(j.error || 'failed')}</div></div>`;
+      count.textContent = '—';
+      return;
+    }
+
+    const items = j.requests || [];
+    count.textContent = `${items.length} requests`;
+
+    if (!items.length) {
+      out.innerHTML = `<div class="alert"><div class="small">No requests match this filter.</div></div>`;
+      return;
+    }
+
+    out.innerHTML = items.map(rowHtml).join('');
+  }
+
+  document.getElementById('refreshBtn').onclick = load;
+  document.getElementById('filter').onchange = load;
+  document.getElementById('logoutBtn').onclick = async ()=>{
+    await fetch('/logout', { method:'POST' }).catch(()=>{});
+    location.href = '/login';
+  };
+
+  load();
+</script>
+</body>
+</html>
