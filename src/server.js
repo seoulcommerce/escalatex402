@@ -62,6 +62,30 @@ app.get('/r/:id', (_req, res) => {
   res.sendFile(new URL('./receipt.html', import.meta.url).pathname);
 });
 
+// Public, read-only receipt JSON (no admin auth).
+app.get('/requests/:id/receipt', async (req, res) => {
+  const row = await get('SELECT id, createdAt, status, title, quoteUsd, paidTxSig, paidAt, acknowledgedAt, completedAt, refundedAt, refundTxSig FROM requests WHERE id = ?', [req.params.id]);
+  if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
+
+  return res.json({
+    ok: true,
+    protocol: 'escalatex/0.1',
+    request: {
+      id: row.id,
+      title: row.title,
+      status: row.status,
+      quoteUsd: row.quoteUsd,
+      createdAt: row.createdAt,
+      paidAt: row.paidAt,
+      paidTxSig: row.paidTxSig,
+      acknowledgedAt: row.acknowledgedAt,
+      completedAt: row.completedAt,
+      refundedAt: row.refundedAt,
+      refundTxSig: row.refundTxSig,
+    },
+  });
+});
+
 function requireAdmin(req, res) {
   const secret = process.env.ADMIN_SECRET || '';
   if (!secret) return true; // no auth if not configured (self-host default)

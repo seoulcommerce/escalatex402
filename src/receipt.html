@@ -1,47 +1,131 @@
 <!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Escalatex402 Receipt</title>
-    <style>
-      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 24px; max-width: 860px; }
-      .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin: 16px 0; }
-      code { background: #f3f4f6; padding: 2px 6px; border-radius: 6px; }
-      .muted { color: #6b7280; }
-    </style>
-  </head>
-  <body>
-    <h1>Escalatex402 receipt</h1>
-    <div class="card" id="out">Loading…</div>
-    <script>
-      const id = location.pathname.split('/').pop();
-      fetch('/admin/requests/' + id).then(async (r) => {
-        const j = await r.json();
-        const root = document.getElementById('out');
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Receipt — Escalatex</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <div class="h1">Escalatex receipt</div>
+          <div class="tag" id="sub">Loading…</div>
+        </div>
+      </div>
+      <div class="row">
+        <a class="btn ghost" href="/">Demo</a>
+        <a class="btn" href="/request">New request</a>
+      </div>
+    </div>
 
-        const lines = [];
-        lines.push(`<div><strong>Request</strong>: <code>${id}</code></div>`);
-        lines.push(`<div><strong>Status</strong>: <code>${j.request.status || 'unknown'}</code></div>`);
-        if (j.request.quoteUsd) lines.push(`<div><strong>Quote</strong>: <code>${j.request.quoteUsd} USDC</code></div>`);
-        if (j.request.paidTxSig) lines.push(`<div><strong>Paid Tx</strong>: <code>${j.request.paidTxSig}</code></div>`);
-        if (j.request.refundTxSig) lines.push(`<div><strong>Refund Tx</strong>: <code>${j.request.refundTxSig}</code></div>`);
+    <div class="grid">
+      <div class="card">
+        <div class="row" style="justify-content:space-between;align-items:flex-start">
+          <div>
+            <div class="h1" id="title">Loading…</div>
+            <div class="tag mono" id="rid"></div>
+          </div>
+          <span class="pill" id="statusPill">…</span>
+        </div>
 
-        const events = [];
-        const addEvt = (label, ts) => { if (ts) events.push(`<li><code>${new Date(ts).toISOString()}</code> — ${label}</li>`); };
-        addEvt('created', j.request.createdAt);
-        addEvt('paid', j.request.paidAt);
-        addEvt('acknowledged', j.request.acknowledgedAt);
-        addEvt('completed', j.request.completedAt);
-        addEvt('refunded', j.request.refundedAt);
+        <hr />
 
-        lines.push(`<div style="margin-top:12px;"><strong>Timeline</strong><ul>${events.join('') || '<li>(no events yet)</li>'}</ul></div>`);
-        lines.push(`<div class="muted" style="margin-top:10px;">Receipt is informational; payment buys priority review/response SLA (not guaranteed completion).</div>`);
+        <div class="kv" id="kv"></div>
 
-        root.innerHTML = lines.join('');
-      }).catch(()=>{
-        document.getElementById('out').textContent = 'Failed to load receipt.';
-      });
-    </script>
-  </body>
+        <hr />
+
+        <div>
+          <div class="h1" style="font-size:16px;margin-bottom:8px">Timeline</div>
+          <div id="timeline" class="alert"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="h1" style="font-size:16px;margin-bottom:8px">Live status</div>
+        <div id="live" class="alert"></div>
+        <div class="footer">This page polls for updates every few seconds.</div>
+      </div>
+    </div>
+
+    <div class="footer">Payments buy priority review/response SLA, not guaranteed completion.</div>
+  </div>
+
+<script>
+  const id = decodeURIComponent(location.pathname.split('/').pop());
+  const sub = document.getElementById('sub');
+  const statusPill = document.getElementById('statusPill');
+
+  function esc(s){return String(s).replace(/[&<>\"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+  function fmt(ts){ return ts ? new Date(Number(ts)).toISOString() : ''; }
+
+  function explorer(sig){
+    if (!sig) return '';
+    return `https://solscan.io/tx/${encodeURIComponent(sig)}`;
+  }
+
+  function render(req){
+    document.title = `Receipt ${req.id} — Escalatex`;
+    document.getElementById('title').textContent = req.title || 'Escalatex request';
+    document.getElementById('rid').textContent = req.id;
+
+    statusPill.textContent = req.status || 'unknown';
+
+    const kv = document.getElementById('kv');
+    kv.innerHTML = `
+      <div>Status</div><div><code>${esc(req.status||'')}</code></div>
+      <div>Quote</div><div>${req.quoteUsd ? `<code>${esc(req.quoteUsd)} USDC</code>` : '<span class="small">(n/a)</span>'}</div>
+      <div>Paid Tx</div><div>${req.paidTxSig ? `<a class="mono" href="${explorer(req.paidTxSig)}" target="_blank">${esc(req.paidTxSig)}</a>` : '<span class="small">(none)</span>'}</div>
+      <div>Refund Tx</div><div>${req.refundTxSig ? `<a class="mono" href="${explorer(req.refundTxSig)}" target="_blank">${esc(req.refundTxSig)}</a>` : '<span class="small">(none)</span>'}</div>
+    `;
+
+    const items = [];
+    const push = (label, ts) => { if (ts) items.push(`<div class="row" style="justify-content:space-between"><div>${label}</div><div class="mono small">${fmt(ts)}</div></div>`); };
+    push('created', req.createdAt);
+    push('paid', req.paidAt);
+    push('acknowledged', req.acknowledgedAt);
+    push('completed', req.completedAt);
+    push('refunded', req.refundedAt);
+
+    document.getElementById('timeline').innerHTML = items.length ? items.join('') : '<div class="small">No timeline events yet.</div>';
+
+    const live = document.getElementById('live');
+    if (req.status === 'awaiting_payment') {
+      live.innerHTML = `<div><strong>Awaiting payment</strong></div><div class="small">If you just paid, return here in ~10–20s or use the request page to check/confirm.</div>`;
+    } else if (req.status === 'paid') {
+      live.innerHTML = `<div class="alert good"><strong>Paid</strong></div><div class="small">Provider has been notified (if notifications configured).</div>`;
+    } else if (req.status === 'acknowledged') {
+      live.innerHTML = `<div class="alert good"><strong>Acknowledged</strong></div><div class="small">Provider has acknowledged the request.</div>`;
+    } else if (req.status === 'completed') {
+      live.innerHTML = `<div class="alert good"><strong>Completed</strong></div><div class="small">Request marked complete.</div>`;
+    } else if (req.status === 'refunded') {
+      live.innerHTML = `<div class="alert bad"><strong>Refunded</strong></div><div class="small">Payment was refunded (manual in MVP).</div>`;
+    } else {
+      live.innerHTML = `<div><strong>${esc(req.status||'unknown')}</strong></div>`;
+    }
+
+    sub.textContent = `${location.origin}/requests/${req.id}/receipt`;
+  }
+
+  async function tick(){
+    try {
+      const r = await fetch(`/requests/${encodeURIComponent(id)}/receipt`);
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.error || 'failed');
+      render(j.request);
+    } catch (e) {
+      sub.textContent = 'Failed to load receipt.';
+      document.getElementById('title').textContent = 'Receipt unavailable';
+      document.getElementById('rid').textContent = id;
+      statusPill.textContent = 'error';
+    }
+  }
+
+  tick();
+  setInterval(tick, 4000);
+</script>
+</body>
 </html>
