@@ -14,9 +14,7 @@
   "private": "true",
   "type": "module",
   "dependencies": {
-    "@solana/web3": {
-      "js": "^1.98.2"
-    },
+    "@solana/web3.js": "^1.98.2",
     "better-sqlite3": "^11.10.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
