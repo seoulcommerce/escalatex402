@@ -10,6 +10,7 @@ import { verifyUsdcPayment } from './solanaVerify.js';
 import { buildSolanaPayUrl, makePaymentMemo, makeReferencePubkey, USDC_MINT } from './solanaPay.js';
 import { loadConfig } from './config.js';
 import { isWithinWorkingHours } from './availability.js';
+import { telegramConfigured, telegramSend, formatPaidNotification } from './telegram.js';
 
 initDb();
 const CFG = loadConfig();
@@ -348,6 +349,22 @@ app.post('/requests/:id/confirm-paid', async (req, res) => {
     ['paid', parsed.data.txSig, Date.now(), row.id]
   );
 
+  // Notify provider (Telegram) if configured.
+  if (telegramConfigured()) {
+    const receiptUrl = process.env.PUBLIC_BASE_URL
+      ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, '')}/r/${row.id}`
+      : '';
+    await telegramSend(
+      formatPaidNotification({
+        requestId: row.id,
+        title: row.title,
+        quoteUsd: row.quoteUsd,
+        txSig: parsed.data.txSig,
+        receiptUrl,
+      })
+    );
+  }
+
   console.log('[escalate402] paid+verified:', row.id, parsed.data.txSig);
 
   return res.json({ ok: true, status: 'paid' });
@@ -383,6 +400,20 @@ app.post('/requests/:id/check', async (req, res) => {
     'UPDATE requests SET status = ?, paidTxSig = ?, paidAt = ? WHERE id = ?',
     ['paid', found.txSig, Date.now(), row.id]
   );
+
+  // Notify provider (Telegram) if configured.
+  if (telegramConfigured()) {
+    const receiptUrl = process.env.PUBLIC_BASE_URL ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, '')}/r/${row.id}` : '';
+    await telegramSend(
+      formatPaidNotification({
+        requestId: row.id,
+        title: row.title,
+        quoteUsd: row.quoteUsd,
+        txSig: found.txSig,
+        receiptUrl,
+      })
+    );
+  }
 
   return res.json({ ok: true, status: 'paid', receipt: { txSig: found.txSig } });
 });

@@ -59,7 +59,15 @@ Payments are bound to a request using both:
 Verification requires the USDC delta to the provider wallet **and** the memo/reference match.
 
 ## Provider notifications (Telegram)
-For the hackathon MVP, provider notifications are sent via **OpenClaw** (cron/poller + `message` tool), not via an embedded Telegram bot token.
+
+For hosted deployments (Render, etc.) the app can send Telegram notifications directly.
+
+Set env vars:
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID` (for Stevie: `432269510`)
+- `PUBLIC_BASE_URL` (e.g. `https://escalatex402.onrender.com`) so receipt links are clickable
+
+(Alternative: route notifications via OpenClaw, but that requires network access between the hosted app and your OpenClaw instance.)
 
 ## Config
 Defaults live in `src/config.js` (tiers, working hours, handle). Override via env or a future `escalatex.config.json`.
