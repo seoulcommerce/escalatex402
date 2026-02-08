@@ -44,7 +44,7 @@ const CreateRequestSchema = z.object({
 /**
  * Create a new support request.
  */
-async function createRequestInternal({ title, body, tags, budgetUsd, providerId }) {
+async function createRequestInternal({ title, body, tags, budgetUsd, providerId, idempotencyKey }) {
   const provider = getProvider(providerId || 'neojack');
 
   // Evaluate and quote immediately (MVP).
@@ -112,8 +112,59 @@ async function createRequestInternal({ title, body, tags, budgetUsd, providerId 
     retryUrl: `/requests/${id}`,
   });
 
-  return { ok: true, requestId: id, status: 'awaiting_payment', quoteUsd: decision.quoteUsd, payment };
+  const out = { ok: true, requestId: id, status: 'awaiting_payment', quoteUsd: decision.quoteUsd, payment };
+
+  if (idempotencyKey) {
+    await run('INSERT OR REPLACE INTO idempotency(k, createdAt, responseJson) VALUES(?,?,?)', [
+      idempotencyKey,
+      Date.now(),
+      JSON.stringify(out),
+    ]);
+  }
+
+  return out;
 }
+
+// Capabilities document (machine-discoverable)
+app.get('/.well-known/escalatex', async (_req, res) => {
+  const interrupt = CFG.tiers?.find((t) => t.key === '15m') || null;
+
+  res.json({
+    protocol: 'escalatex/0.1',
+    handle: CFG.handle,
+    display_name: CFG.displayName,
+    timezone: CFG.timezone,
+    hours: {
+      start: CFG.workingHours?.start || '09:00',
+      end: CFG.workingHours?.end || '18:00',
+      days: CFG.workingHours?.days || [1, 2, 3, 4, 5],
+    },
+    tiers: (CFG.tiers || []).map((t) => ({
+      id: t.key,
+      label: t.label,
+      price: Number(t.priceUsd),
+      currency: 'USDC',
+      chain: 'solana',
+      target: t.key === '15m' ? 'interrupt' : 'first_response',
+      what_you_get: t.whatYouGet,
+    })),
+    max_open_requests: CFG.maxOpenRequests,
+    contact: {
+      telegram_chat: 'this-instance-via-openclaw',
+    },
+    anti_spam: {
+      min_payment: Number(CFG.minPaymentUsd || '10'),
+      refund_policy: 'provider_refunds_if_out_of_scope; optional_auto_refund_future',
+    },
+    interrupt: interrupt
+      ? { id: interrupt.key, price: Number(interrupt.priceUsd), currency: 'USDC', chain: 'solana' }
+      : null,
+    endpoints: {
+      intake: '/.well-known/escalatex',
+      receipt: '/r/:id',
+    },
+  });
+});
 
 // Protocol endpoint: Paid escalation inbox
 app.post('/.well-known/escalatex', async (req, res) => {
@@ -141,11 +192,14 @@ app.post('/.well-known/escalatex', async (req, res) => {
 
   const tier = CFG.tiers.find((t) => t.key === desired) || CFG.tiers[0];
 
+  const idem = req.get('Idempotency-Key') || '';
+
   const created = await createRequestInternal({
     title: String(title).slice(0, 200),
     body: [details, urgency ? `Urgency: ${urgency}` : null].filter(Boolean).join('\n\n'),
     tags,
     budgetUsd: String(tier.priceUsd),
+    idempotencyKey: idem || null,
   });
 
   // Protocol responses prefer 200 with status.
@@ -169,74 +223,18 @@ app.post('/requests', async (req, res) => {
   }
 
   const { title, body, tags, budgetUsd, providerId } = parsed.data;
-  const provider = getProvider(providerId || 'neojack');
-
-  // Evaluate and quote immediately (MVP). In later versions, this could be async/agent-driven.
-  const decision = evaluateRequest({ title, body, tags, budgetUsd });
-
-  const id = crypto.randomUUID();
-  const createdAt = Date.now();
-
-  if (!decision.accepted) {
-    await run(
-      `INSERT INTO requests(id, createdAt, status, title, body, tags, budgetUsd, providerId, quoteUsd, quoteMessage)
-       VALUES(?,?,?,?,?,?,?,?,?,?)`,
-      [id, createdAt, 'rejected', title, body, JSON.stringify(tags), budgetUsd || null, provider.id, null, decision.message]
-    );
-
-    return res.status(200).json({ ok: true, requestId: id, status: 'rejected', message: decision.message });
-  }
-
-  // Prepare payment-required state.
-  const reference = makeReferencePubkey();
-  const expiresAt = Date.now() + 15 * 60 * 1000; // 15 min
-  const memo = makePaymentMemo({ requestId: id, reference });
-
-  const payUrl = buildSolanaPayUrl({
-    recipient: provider.solanaPayTo,
-    amount: decision.quoteUsd,
-    reference,
-    memo,
-    mint: USDC_MINT,
-    label: 'Escalatex402',
-    message: `Request ${id}`,
+  const idem = req.get('Idempotency-Key') || '';
+  const created = await createRequestInternal({
+    title,
+    body,
+    tags,
+    budgetUsd,
+    providerId,
+    idempotencyKey: idem || null,
   });
 
-  await run(
-    `INSERT INTO requests(id, createdAt, status, title, body, tags, budgetUsd, providerId, quoteUsd, quoteMessage, paymentToken, payTo, paymentReference, paymentMemo)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [
-      id,
-      createdAt,
-      'awaiting_payment',
-      title,
-      body,
-      JSON.stringify(tags),
-      budgetUsd || null,
-      provider.id,
-      decision.quoteUsd,
-      decision.message,
-      provider.defaultToken,
-      provider.solanaPayTo,
-      reference,
-      memo,
-    ]
-  );
-
-  const payment = build402Payload({
-    requestId: id,
-    amountUsd: decision.quoteUsd,
-    token: provider.defaultToken,
-    payTo: provider.solanaPayTo,
-    reference,
-    memo,
-    mint: USDC_MINT,
-    payUrl,
-    expiresAt,
-    retryUrl: `/requests/${id}`,
-  });
-
-  return res.status(201).json({ ok: true, requestId: id, status: 'awaiting_payment', quoteUsd: decision.quoteUsd, payment });
+  const code = created.status === 'awaiting_payment' ? 201 : 200;
+  return res.status(code).json(created);
 });
 
 /**

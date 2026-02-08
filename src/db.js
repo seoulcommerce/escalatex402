@@ -34,6 +34,12 @@ export function initDb() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_requests_status ON requests(status);
+
+    CREATE TABLE IF NOT EXISTS idempotency (
+      k TEXT PRIMARY KEY,
+      createdAt INTEGER NOT NULL,
+      responseJson TEXT NOT NULL
+    );
   `);
 
   // Lightweight migrations (best-effort).

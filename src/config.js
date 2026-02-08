@@ -3,11 +3,14 @@ import fs from 'fs';
 const DEFAULT = {
   handle: process.env.ESCALATEX_HANDLE || 'neojack',
   displayName: process.env.ESCALATEX_DISPLAY_NAME || 'Neojack',
-  timezone: process.env.ESCALATEX_TZ || 'UTC',
+  timezone: process.env.ESCALATEX_TZ || 'Asia/Seoul',
   workingHours: {
-    // 24h clock, best-effort for hackathon.
-    startHour: Number(process.env.ESCALATEX_START_HOUR || 9),
-    endHour: Number(process.env.ESCALATEX_END_HOUR || 18),
+    // Hackathon MVP: we compute against UTC hours, but publish this schedule in capabilities.
+    start: process.env.ESCALATEX_START || '09:00',
+    end: process.env.ESCALATEX_END || '18:00',
+    days: [1, 2, 3, 4, 5],
+    startHour: Number(process.env.ESCALATEX_START_HOUR || 0),
+    endHour: Number(process.env.ESCALATEX_END_HOUR || 24),
   },
   tiers: [
     { key: '24h', label: '24h response', priceUsd: '10', whatYouGet: 'Priority review + response within 24h.' },
