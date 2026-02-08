@@ -16,13 +16,31 @@
     <div class="card" id="out">Loading…</div>
     <script>
       const id = location.pathname.split('/').pop();
-      fetch('/requests/' + id).then(async (r) => {
+      fetch('/admin/requests/' + id).then(async (r) => {
         const j = await r.json();
         const root = document.getElementById('out');
-        root.innerHTML = `<div><strong>Request</strong>: <code>${id}</code></div>` +
-          `<div><strong>Status</strong>: <code>${j.status || j.request?.status || 'unknown'}</code></div>` +
-          (j.receipt?.txSig ? `<div><strong>Tx</strong>: <code>${j.receipt.txSig}</code></div>` : '') +
-          `<div class="muted" style="margin-top:10px;">This is a hackathon MVP receipt page.</div>`;
+
+        const lines = [];
+        lines.push(`<div><strong>Request</strong>: <code>${id}</code></div>`);
+        lines.push(`<div><strong>Status</strong>: <code>${j.request.status || 'unknown'}</code></div>`);
+        if (j.request.quoteUsd) lines.push(`<div><strong>Quote</strong>: <code>${j.request.quoteUsd} USDC</code></div>`);
+        if (j.request.paidTxSig) lines.push(`<div><strong>Paid Tx</strong>: <code>${j.request.paidTxSig}</code></div>`);
+        if (j.request.refundTxSig) lines.push(`<div><strong>Refund Tx</strong>: <code>${j.request.refundTxSig}</code></div>`);
+
+        const events = [];
+        const addEvt = (label, ts) => { if (ts) events.push(`<li><code>${new Date(ts).toISOString()}</code> — ${label}</li>`); };
+        addEvt('created', j.request.createdAt);
+        addEvt('paid', j.request.paidAt);
+        addEvt('acknowledged', j.request.acknowledgedAt);
+        addEvt('completed', j.request.completedAt);
+        addEvt('refunded', j.request.refundedAt);
+
+        lines.push(`<div style="margin-top:12px;"><strong>Timeline</strong><ul>${events.join('') || '<li>(no events yet)</li>'}</ul></div>`);
+        lines.push(`<div class="muted" style="margin-top:10px;">Receipt is informational; payment buys priority review/response SLA (not guaranteed completion).</div>`);
+
+        root.innerHTML = lines.join('');
+      }).catch(()=>{
+        document.getElementById('out').textContent = 'Failed to load receipt.';
       });
     </script>
   </body>

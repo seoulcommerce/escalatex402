@@ -14,7 +14,11 @@ CREATE TABLE IF NOT EXISTS requests (
   paymentReference TEXT,
   paymentMemo TEXT,
   paidTxSig TEXT,
-  paidAt INTEGER
+  paidAt INTEGER,
+  acknowledgedAt INTEGER,
+  completedAt INTEGER,
+  refundedAt INTEGER,
+  refundTxSig TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_requests_status ON requests(status);

@@ -32,6 +32,18 @@ app.get('/r/:id', (_req, res) => {
   res.sendFile(new URL('./receipt.html', import.meta.url).pathname);
 });
 
+function requireAdmin(req, res) {
+  const secret = process.env.ADMIN_SECRET || '';
+  if (!secret) return true; // no auth if not configured (self-host default)
+  const got = req.get('X-Admin-Secret') || req.query.admin_secret || '';
+  if (got !== secret) {
+    res.status(401).json({ ok: false, error: 'unauthorized' });
+    return false;
+  }
+  return true;
+}
+
+
 app.get('/health', async (_req, res) => {
   const count = await get('SELECT COUNT(*) as c FROM requests');
   res.json({ ok: true, requests: count?.c || 0 });
@@ -440,8 +452,43 @@ app.post('/requests/:id/check', async (req, res) => {
 });
 
 app.get('/admin/requests', async (req, res) => {
-  const rows = await all('SELECT id, createdAt, status, title, providerId, quoteUsd, paidAt FROM requests ORDER BY createdAt DESC LIMIT 50');
+  if (!requireAdmin(req, res)) return;
+  const rows = await all('SELECT id, createdAt, status, title, providerId, quoteUsd, paidAt, acknowledgedAt, completedAt, refundedAt FROM requests ORDER BY createdAt DESC LIMIT 100');
   res.json({ ok: true, requests: rows });
+});
+
+app.get('/admin/requests/:id', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const row = await get('SELECT * FROM requests WHERE id = ?', [req.params.id]);
+  if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
+  const tags = safeJson(row.tags, []);
+  res.json({ ok: true, request: { ...row, tags } });
+});
+
+app.post('/admin/requests/:id/acknowledge', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const row = await get('SELECT * FROM requests WHERE id = ?', [req.params.id]);
+  if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
+  await run('UPDATE requests SET status = ?, acknowledgedAt = ? WHERE id = ?', ['acknowledged', Date.now(), row.id]);
+  res.json({ ok: true, status: 'acknowledged' });
+});
+
+app.post('/admin/requests/:id/complete', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const row = await get('SELECT * FROM requests WHERE id = ?', [req.params.id]);
+  if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
+  await run('UPDATE requests SET status = ?, completedAt = ? WHERE id = ?', ['completed', Date.now(), row.id]);
+  res.json({ ok: true, status: 'completed' });
+});
+
+app.post('/admin/requests/:id/refund', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const row = await get('SELECT * FROM requests WHERE id = ?', [req.params.id]);
+  if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
+  // MVP: mark refunded; actual on-chain refund is manual for now.
+  const txSig = (req.body && req.body.txSig) ? String(req.body.txSig) : null;
+  await run('UPDATE requests SET status = ?, refundedAt = ?, refundTxSig = ? WHERE id = ?', ['refunded', Date.now(), txSig, row.id]);
+  res.json({ ok: true, status: 'refunded' });
 });
 
 function safeJson(s, fallback) {
