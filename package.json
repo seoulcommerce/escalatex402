@@ -2,7 +2,7 @@
   "name": "escalate402",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/server.js",
   "scripts": {
     "test": "node -e \"console.log('no tests yet')\"",
     "dev": "node src/server.js",
