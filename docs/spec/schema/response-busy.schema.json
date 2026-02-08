@@ -9,7 +9,7 @@
     "status": { "type": "string", "const": "busy" },
     "reason": {
       "type": "string",
-      "enum": ["outside_working_hours", "queue_full", "maintenance", "manual_pause"]
+      "enum": ["outside_working_hours", "queue_full", "maintenance", "manual_pause", "rate_limited"]
     },
     "next_available_at": { "type": "string" },
     "interrupt": {

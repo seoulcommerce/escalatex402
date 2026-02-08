@@ -22,6 +22,19 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
+// Rate limiting (security baseline)
+const { default: rateLimit } = await import('express-rate-limit');
+const RL_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000);
+const RL_MAX = Number(process.env.RATE_LIMIT_MAX || 30);
+
+const intakeLimiter = rateLimit({
+  windowMs: RL_WINDOW_MS,
+  limit: RL_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { protocol: 'escalatex/0.1', status: 'busy', reason: 'rate_limited', message: 'Too many requests. Try again later.' },
+});
+
 app.get('/', (_req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.sendFile(new URL('./ui.html', import.meta.url).pathname);
@@ -189,7 +202,7 @@ app.get('/.well-known/escalatex', async (_req, res) => {
 });
 
 // Protocol endpoint: Paid escalation inbox
-app.post('/.well-known/escalatex', async (req, res) => {
+app.post('/.well-known/escalatex', intakeLimiter, async (req, res) => {
   const body = req.body || {};
   const title = body.subject || body.title || 'Escalation request';
   const details = body.details || body.body || '';
