@@ -22,19 +22,25 @@
     <p class="muted">Paid escalation for in-demand devs. Submit a request → get an x402 payment handshake → pay on Solana → provider gets notified on Telegram.</p>
 
     <div class="card">
-      <h2>Create request</h2>
-      <label>Title</label>
+      <h2>Provider capabilities (GET /.well-known/escalatex)</h2>
+      <button class="secondary" id="capsBtn">Refresh capabilities</button>
+      <pre id="capsOut"></pre>
+    </div>
+
+    <div class="card">
+      <h2>Create request (POST /.well-known/escalatex)</h2>
+      <label>Subject</label>
       <input id="title" value="Need help debugging a Solana paywall" />
-      <label>Body</label>
-      <textarea id="body" rows="4">My agent got a 402 payment_required but can't verify the Solana payment.</textarea>
+      <label>Details</label>
+      <textarea id="body" rows="4">My agent got a payment_required response but can't verify the Solana payment.</textarea>
       <div class="row">
         <div>
           <label>Tags (comma)</label>
           <input id="tags" value="payments,solana,ai" />
         </div>
         <div>
-          <label>Budget (USD)</label>
-          <input id="budget" value="30" />
+          <label>Desired tier (24h / 2h / 15m_interrupt)</label>
+          <input id="budget" value="2h" />
         </div>
       </div>
       <div style="margin-top:12px;">
@@ -62,21 +68,29 @@
 
       let lastPayment = null;
 
-      el('createBtn').onclick = async () => {
-        const title = el('title').value;
-        const body = el('body').value;
-        const tags = el('tags').value.split(',').map(s=>s.trim()).filter(Boolean);
-        const budgetUsd = el('budget').value;
+      async function loadCaps() {
+        const res = await fetch(api + '/.well-known/escalatex');
+        const json = await res.json();
+        el('capsOut').textContent = JSON.stringify(json, null, 2);
+      }
 
-        const res = await fetch(api + '/requests', {
+      el('capsBtn').onclick = loadCaps;
+
+      el('createBtn').onclick = async () => {
+        const subject = el('title').value;
+        const details = el('body').value;
+        const tags = el('tags').value.split(',').map(s=>s.trim()).filter(Boolean);
+        const desired_tier = el('budget').value;
+
+        const res = await fetch(api + '/.well-known/escalatex', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, body, tags, budgetUsd })
+          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'demo-ui' },
+          body: JSON.stringify({ subject, details, tags, desired_tier })
         });
         const json = await res.json();
         el('createOut').textContent = JSON.stringify(json, null, 2);
-        if (json.requestId) {
-          el('rid').value = json.requestId;
+        if (json.request && json.request.id) {
+          el('rid').value = json.request.id;
           await refresh();
         }
       };
@@ -88,14 +102,13 @@
         const json = await res.json();
         el('statusOut').textContent = `HTTP ${res.status}\n` + JSON.stringify(json, null, 2);
 
-        lastPayment = json.payment || json.payment?.payment || json.paymentRequired || json?.payment;
-        // Our API nests payment under json.payment in 402 responses.
-        const payment = json.payment?.payment ? json.payment.payment : json.payment;
+        // Spec-aligned responses expose payment directly.
+        const payment = json.payment || (json.payment && json.payment.payment) || null;
 
-        if (res.status === 402 && payment && payment.pay_url) {
+        if ((res.status === 402 || json.status === 'requires_payment') && payment && payment.pay_url) {
           el('openPayBtn').disabled = false;
           el('checkBtn').disabled = false;
-          el('payInfo').innerHTML = `Pay <code>${payment.amount} ${payment.token}</code> to <code>${payment.recipient}</code><br/>Memo: <code>${payment.memo}</code>`;
+          el('payInfo').innerHTML = `Pay <code>${payment.amount} ${payment.currency || 'USDC'}</code> to <code>${payment.recipient}</code><br/>Memo: <code>${payment.memo || '(optional)'}</code>`;
           el('openPayBtn').onclick = () => window.open(payment.pay_url, '_blank');
         } else {
           el('openPayBtn').disabled = true;
@@ -115,6 +128,7 @@
       };
 
       // initial
+      loadCaps();
       refresh();
     </script>
   </body>
