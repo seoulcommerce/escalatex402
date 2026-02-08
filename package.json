@@ -6,6 +6,7 @@
   "scripts": {
     "test": "node scripts/validate-schema.mjs",
     "conformance": "node scripts/conformance.mjs",
+    "migrate": "node src/migrate.js",
     "dev": "node src/server.js",
     "start": "node src/server.js"
   },

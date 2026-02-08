@@ -12,6 +12,9 @@ import { loadConfig } from './config.js';
 import { isWithinWorkingHours } from './availability.js';
 import { telegramConfigured, telegramSend, formatPaidNotification } from './telegram.js';
 
+// Apply DB migrations on startup.
+const { migrate } = await import('./migrate.js');
+migrate();
 initDb();
 const CFG = loadConfig();
 
