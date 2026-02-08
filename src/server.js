@@ -8,8 +8,11 @@ import { getProvider, evaluateRequest } from './providers.js';
 import { build402Payload } from './x402.js';
 import { verifyUsdcPayment } from './solanaVerify.js';
 import { buildSolanaPayUrl, makePaymentMemo, makeReferencePubkey, USDC_MINT } from './solanaPay.js';
+import { loadConfig } from './config.js';
+import { isWithinWorkingHours } from './availability.js';
 
 initDb();
+const CFG = loadConfig();
 
 const app = express();
 app.use(cors());
@@ -18,6 +21,11 @@ app.use(express.json({ limit: '1mb' }));
 app.get('/', (_req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.sendFile(new URL('./ui.html', import.meta.url).pathname);
+});
+
+app.get('/r/:id', (_req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.sendFile(new URL('./receipt.html', import.meta.url).pathname);
 });
 
 app.get('/health', async (_req, res) => {
@@ -36,6 +44,124 @@ const CreateRequestSchema = z.object({
 /**
  * Create a new support request.
  */
+async function createRequestInternal({ title, body, tags, budgetUsd, providerId }) {
+  const provider = getProvider(providerId || 'neojack');
+
+  // Evaluate and quote immediately (MVP).
+  const decision = evaluateRequest({ title, body, tags, budgetUsd });
+
+  const id = crypto.randomUUID();
+  const createdAt = Date.now();
+
+  if (!decision.accepted) {
+    await run(
+      `INSERT INTO requests(id, createdAt, status, title, body, tags, budgetUsd, providerId, quoteUsd, quoteMessage)
+       VALUES(?,?,?,?,?,?,?,?,?,?)`,
+      [id, createdAt, 'rejected', title, body, JSON.stringify(tags), budgetUsd || null, provider.id, null, decision.message]
+    );
+
+    return { ok: true, requestId: id, status: 'rejected', message: decision.message };
+  }
+
+  // Prepare payment-required state.
+  const reference = makeReferencePubkey();
+  const expiresAt = Date.now() + 15 * 60 * 1000; // 15 min
+  const memo = makePaymentMemo({ requestId: id, reference });
+
+  const payUrl = buildSolanaPayUrl({
+    recipient: provider.solanaPayTo,
+    amount: decision.quoteUsd,
+    reference,
+    memo,
+    mint: USDC_MINT,
+    label: 'Escalatex402',
+    message: `Request ${id}`,
+  });
+
+  await run(
+    `INSERT INTO requests(id, createdAt, status, title, body, tags, budgetUsd, providerId, quoteUsd, quoteMessage, paymentToken, payTo, paymentReference, paymentMemo)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [
+      id,
+      createdAt,
+      'awaiting_payment',
+      title,
+      body,
+      JSON.stringify(tags),
+      budgetUsd || null,
+      provider.id,
+      decision.quoteUsd,
+      decision.message,
+      provider.defaultToken,
+      provider.solanaPayTo,
+      reference,
+      memo,
+    ]
+  );
+
+  const payment = build402Payload({
+    requestId: id,
+    amountUsd: decision.quoteUsd,
+    token: provider.defaultToken,
+    payTo: provider.solanaPayTo,
+    reference,
+    memo,
+    mint: USDC_MINT,
+    payUrl,
+    expiresAt,
+    retryUrl: `/requests/${id}`,
+  });
+
+  return { ok: true, requestId: id, status: 'awaiting_payment', quoteUsd: decision.quoteUsd, payment };
+}
+
+// Protocol endpoint: Paid escalation inbox
+app.post('/.well-known/escalatex', async (req, res) => {
+  const body = req.body || {};
+  const title = body.subject || body.title || 'Escalation request';
+  const details = body.details || body.body || '';
+  const urgency = body.urgency || '';
+  const desired = body.desired_sla || body.desiredSla || '';
+  const tags = Array.isArray(body.tags) ? body.tags : [];
+
+  const within = isWithinWorkingHours(new Date(), CFG);
+  if (!within) {
+    const interrupt = CFG.tiers?.find((t) => t.key === '15m');
+    return res.status(409).json({
+      ok: true,
+      status: 'busy',
+      handle: CFG.handle,
+      next_available_at: 'next_working_hours',
+      message: 'Currently outside working hours.',
+      interrupt_quote: interrupt
+        ? { amount: interrupt.priceUsd, currency: 'USDC', chain: 'solana', tier: interrupt.key }
+        : null,
+    });
+  }
+
+  const tier = CFG.tiers.find((t) => t.key === desired) || CFG.tiers[0];
+
+  const created = await createRequestInternal({
+    title: String(title).slice(0, 200),
+    body: [details, urgency ? `Urgency: ${urgency}` : null].filter(Boolean).join('\n\n'),
+    tags,
+    budgetUsd: String(tier.priceUsd),
+  });
+
+  // Protocol responses prefer 200 with status.
+  return res.status(200).json({
+    ok: true,
+    status: created.status === 'awaiting_payment' ? 'requires_payment' : created.status,
+    handle: CFG.handle,
+    requestId: created.requestId,
+    quote: created.quoteUsd ? { amount: created.quoteUsd, currency: 'USDC', chain: 'solana', tier: tier.key } : null,
+    payment: created.payment || null,
+    what_you_get: tier.whatYouGet,
+    expires_at: created.payment?.payment?.expires_at || null,
+    retry_url: created.payment?.retry_url || null,
+  });
+});
+
 app.post('/requests', async (req, res) => {
   const parsed = CreateRequestSchema.safeParse(req.body);
   if (!parsed.success) {
