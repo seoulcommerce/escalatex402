@@ -7,7 +7,7 @@ export function getProvider(providerId = 'neojack') {
     name: process.env.PROVIDER_NAME || 'Neojack',
     telegramChatId: process.env.PROVIDER_TELEGRAM_CHAT_ID || '',
     // Solana address to receive payments.
-    solanaPayTo: process.env.PROVIDER_SOL_ADDRESS || '',
+    solanaPayTo: process.env.PROVIDER_SOL_ADDRESS || 'Bt6CgWWuvV2qjkbbVuwXhLptwMajZVerhAZCF7NA4VWW',
     // USDC mint on Solana (mainnet) for later; MVP treats token symbolically.
     defaultToken: process.env.DEFAULT_PAYMENT_TOKEN || 'USDC',
     minQuoteUsd: process.env.MIN_QUOTE_USD || '25',

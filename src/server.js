@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { initDb, run, get, all } from './db.js';
 import { getProvider, evaluateRequest } from './providers.js';
 import { build402Payload } from './x402.js';
+import { verifyUsdcPayment } from './solanaVerify.js';
 
 initDb();
 
@@ -132,8 +133,8 @@ app.get('/requests/:id', async (req, res) => {
 });
 
 /**
- * MVP: manual payment confirmation endpoint.
- * In production this would verify on-chain USDC/SOL transfer.
+ * Confirm payment by tx signature.
+ * Verifies a USDC payment to the provider address.
  */
 const ConfirmSchema = z.object({
   txSig: z.string().min(10).max(200),
@@ -147,13 +148,33 @@ app.post('/requests/:id/confirm-paid', async (req, res) => {
   if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
   if (row.status === 'paid') return res.json({ ok: true, status: 'paid' });
 
+  // Verify on-chain.
+  const expected = row.quoteUsd ? String(row.quoteUsd) : null;
+  const payTo = row.payTo;
+  if (!expected || !payTo) {
+    return res.status(400).json({ ok: false, error: 'missing_expected_payment' });
+  }
+
+  try {
+    const v = await verifyUsdcPayment({
+      txSig: parsed.data.txSig,
+      payTo,
+      expectedAmountUsdc: expected,
+    });
+
+    if (!v.ok) {
+      return res.status(400).json({ ok: false, error: 'verification_failed', details: v });
+    }
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: 'verification_error', message: e?.message || String(e) });
+  }
+
   await run(
     'UPDATE requests SET status = ?, paidTxSig = ?, paidAt = ? WHERE id = ?',
     ['paid', parsed.data.txSig, Date.now(), row.id]
   );
 
-  // Notification is intentionally not implemented here yet; we’ll integrate OpenClaw/Telegram next.
-  console.log('[escalate402] paid:', row.id, parsed.data.txSig);
+  console.log('[escalate402] paid+verified:', row.id, parsed.data.txSig);
 
   return res.json({ ok: true, status: 'paid' });
 });
