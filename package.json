@@ -5,6 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "test": "node scripts/validate-schema.mjs",
+    "conformance": "node scripts/conformance.mjs",
     "dev": "node src/server.js",
     "start": "node src/server.js"
   },

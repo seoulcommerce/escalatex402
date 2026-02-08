@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm test
+
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Start server
+        run: |
+          node src/server.js &
+          echo $! > server.pid
+          sleep 1
+
+      - name: Run conformance
+        env:
+          ESCALATEX_BASE_URL: http://127.0.0.1:8787
+        run: npm run conformance
+
+      - name: Stop server
+        if: always()
+        run: |
+          kill $(cat server.pid) || true
