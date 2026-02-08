@@ -8,8 +8,15 @@ npm install
 npm run dev
 ```
 
-## Endpoints (planned)
+## Endpoints (MVP)
 - `POST /requests`
-- `GET /requests/:id` (returns 402 until paid)
-- `POST /providers/:id/evaluate`
+  - creates request + returns quote + payment instructions
+- `GET /requests/:id`
+  - returns **402** with x402-style JSON until paid
+- `POST /requests/:id/confirm-paid`
+  - MVP helper (manual). Later: on-chain verification.
+- `GET /admin/requests`
+
+## Telegram notifications
+For hackathon MVP we will notify the provider in Telegram **via OpenClaw** (not via a bot token inside this server).
 

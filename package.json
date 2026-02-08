@@ -14,10 +14,10 @@
   "private": "true",
   "type": "module",
   "dependencies": {
+    "better-sqlite3": "^11.10.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "node-fetch": "^3.3.2",
-    "sqlite3": "^5.1.7",
     "zod": "^3.24.1"
   }
 }
