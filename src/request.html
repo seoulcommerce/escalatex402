@@ -68,6 +68,194 @@
   function esc(s){return String(s).replace(/[&<>\"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
   function uuid(){ return (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random().toString(16).slice(2)); }
 
+  // Minimal QR generator (adapted from qrcode-generator style logic; embedded to avoid external services)
+  // Supports byte mode, error correction level M.
+  function renderQrToCanvas(canvasId, text){
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const qr = QrCode.encodeText(text);
+    const cells = qr.cells;
+    const n = cells.length;
+
+    const pad = 10;
+    const size = Math.min(canvas.width, canvas.height);
+    const cell = Math.floor((size - pad*2) / n);
+    const offset = Math.floor((size - cell*n) / 2);
+
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0,0,size,size);
+    ctx.fillStyle = '#000';
+
+    for (let r=0;r<n;r++){
+      for (let c=0;c<n;c++){
+        if (cells[r][c]) ctx.fillRect(offset + c*cell, offset + r*cell, cell, cell);
+      }
+    }
+  }
+
+  const QrCode = (()=>{
+    // Very small QR encoder for Version 4 (33x33) byte-mode only.
+    // This is enough for Solana Pay URLs used here.
+    function encodeText(text){
+      const bytes = new TextEncoder().encode(text);
+      // Version 4 capacity (M) in byte mode: 64 bytes. If bigger, we'll truncate.
+      const data = Array.from(bytes.slice(0, 64));
+      const bits = [];
+      const pushBits=(v,len)=>{ for(let i=len-1;i>=0;i--) bits.push((v>>i)&1); };
+
+      // mode: byte (0100)
+      pushBits(0b0100,4);
+      // length for version 1-9: 8 bits
+      pushBits(data.length,8);
+      for(const b of data) pushBits(b,8);
+      // terminator
+      pushBits(0,4);
+      while(bits.length % 8) bits.push(0);
+
+      const codewords=[];
+      for(let i=0;i<bits.length;i+=8){
+        let b=0; for(let j=0;j<8;j++) b=(b<<1)|bits[i+j];
+        codewords.push(b);
+      }
+      // pad to 64 data codewords for version 4-M (data cw = 64)
+      const PAD=[0xEC,0x11];
+      let pi=0;
+      while(codewords.length<64){ codewords.push(PAD[pi++%2]); }
+
+      // Add error correction (version 4-M: ec cw = 36). We use a simple RS implementation.
+      const ec = reedSolomon(codewords, 36);
+      const finalCw = codewords.concat(ec);
+
+      // Build matrix
+      const n=33;
+      const m = Array.from({length:n},()=>Array(n).fill(null));
+      const set=(r,c,v)=>{ if(r>=0&&c>=0&&r<n&&c<n) m[r][c]=v; };
+      const placeFinder=(r,c)=>{
+        for(let dr=-1;dr<=7;dr++) for(let dc=-1;dc<=7;dc++){
+          const rr=r+dr, cc=c+dc;
+          const on = (dr>=0&&dr<=6&&dc>=0&&dc<=6 && (dr===0||dr===6||dc===0||dc===6|| (dr>=2&&dr<=4&&dc>=2&&dc<=4)));
+          set(rr,cc,on?1:0);
+        }
+      };
+      placeFinder(0,0); placeFinder(0,n-7); placeFinder(n-7,0);
+      // timing patterns
+      for(let i=8;i<n-8;i++){ set(6,i,i%2===0?1:0); set(i,6,i%2===0?1:0); }
+      // alignment (version 4: positions 6,26)
+      placeAlign(26,26);
+      function placeAlign(r,c){
+        for(let dr=-2;dr<=2;dr++) for(let dc=-2;dc<=2;dc++){
+          const on = Math.max(Math.abs(dr),Math.abs(dc))!==1;
+          set(r+dr,c+dc,on?1:0);
+        }
+      }
+      // dark module
+      set(4*8+1,8,1);
+
+      // reserve format info areas
+      for(let i=0;i<9;i++){ if(m[8][i]===null) set(8,i,0); if(m[i][8]===null) set(i,8,0); }
+      for(let i=n-8;i<n;i++){ if(m[8][i]===null) set(8,i,0); if(m[i][8]===null) set(i,8,0); }
+      for(let i=0;i<8;i++){ if(m[n-1-i][8]===null) set(n-1-i,8,0); if(m[8][n-1-i]===null) set(8,n-1-i,0); }
+
+      // data placement (mask 0)
+      let bitIdx=0;
+      const getBit=()=>{
+        const cw=Math.floor(bitIdx/8);
+        const b=finalCw[cw];
+        const offset=7-(bitIdx%8);
+        bitIdx++;
+        return (b>>offset)&1;
+      };
+      let dir=-1;
+      for(let c=n-1;c>0;c-=2){
+        if(c===6) c--; // skip timing column
+        for(let r= (dir===-1?n-1:0); dir===-1? r>=0 : r<n; r+=dir){
+          for(let dc=0;dc<2;dc++){
+            const cc=c-dc;
+            if(m[r][cc]!==null) continue;
+            const b = bitIdx < finalCw.length*8 ? getBit() : 0;
+            // mask 0: (r+c)%2==0
+            const masked = ((r+cc)%2===0) ? (b^1) : b;
+            m[r][cc]=masked;
+          }
+        }
+        dir*=-1;
+      }
+
+      // format info for level M, mask 0
+      writeFormat(m, 'M', 0);
+
+      // convert to boolean cells
+      const cells = m.map(row=>row.map(v=>v?true:false));
+      return { cells };
+    }
+
+    function writeFormat(m, level, mask){
+      const n=m.length;
+      const eclBits = level==='L'?1: level==='M'?0: level==='Q'?3:2;
+      let format = (eclBits<<3) | mask;
+      // BCH(15,5)
+      let bch = format<<10;
+      const poly = 0b10100110111;
+      for(let i=14;i>=10;i--){
+        if(((bch>>i)&1)===1) bch ^= poly<<(i-10);
+      }
+      const bits = ((format<<10)|bch) ^ 0b101010000010010;
+      const bit = (i)=> (bits>>(14-i))&1;
+
+      // place
+      const set=(r,c,v)=>{ if(m[r][c]===null) m[r][c]=v; else m[r][c]=v; };
+      // around top-left
+      for(let i=0;i<=5;i++) set(8,i,bit(i));
+      set(8,7,bit(6));
+      set(8,8,bit(7));
+      set(7,8,bit(8));
+      for(let i=9;i<15;i++) set(14-i,8,bit(i));
+      // top-right
+      for(let i=0;i<8;i++) set(8,n-1-i,bit(i));
+      // bottom-left
+      for(let i=8;i<15;i++) set(n-15+i,8,bit(i));
+    }
+
+    // Reed-Solomon over GF(256)
+    function reedSolomon(data, ecLen){
+      const gfExp = new Array(512).fill(0);
+      const gfLog = new Array(256).fill(0);
+      let x=1;
+      for(let i=0;i<255;i++){
+        gfExp[i]=x;
+        gfLog[x]=i;
+        x<<=1;
+        if(x&256) x^=0x11d;
+      }
+      for(let i=255;i<512;i++) gfExp[i]=gfExp[i-255];
+      const mul=(a,b)=>{ if(a===0||b===0) return 0; return gfExp[gfLog[a]+gfLog[b]]; };
+
+      let gen=[1];
+      for(let i=0;i<ecLen;i++){
+        const next=[1, gfExp[i]];
+        const out=new Array(gen.length+1).fill(0);
+        for(let j=0;j<gen.length;j++){
+          out[j] ^= mul(gen[j], next[0]);
+          out[j+1] ^= mul(gen[j], next[1]);
+        }
+        gen=out;
+      }
+
+      const msg = data.concat(new Array(ecLen).fill(0));
+      for(let i=0;i<data.length;i++){
+        const coef = msg[i];
+        if(coef===0) continue;
+        for(let j=0;j<gen.length;j++){
+          msg[i+j] ^= mul(gen[j], coef);
+        }
+      }
+      return msg.slice(msg.length-ecLen);
+    }
+
+    return { encodeText };
+  })();
+
   let capabilities = null;
   let lastRequest = null;
 
@@ -150,6 +338,12 @@
           <div><strong>${esc(j.payment?.amount)} ${esc(j.payment?.currency)}</strong></div>
           <div class="small" style="margin-top:8px">Solana Pay URL:</div>
           <div class="mono" id="payUrl" style="word-break:break-all">${esc(payUrl || '')}</div>
+          <div style="margin-top:10px" class="row">
+            <div class="alert" style="padding:10px">
+              <div class="small">Scan to pay</div>
+              <canvas id="qr" width="220" height="220" style="margin-top:8px;border-radius:12px;background:#fff"></canvas>
+            </div>
+          </div>
           <div class="row" style="margin-top:10px">
             <a class="btn primary" href="${esc(payUrl || '#')}" target="_blank" ${payUrl?"":"style='pointer-events:none;opacity:.6'"}>Open payment link</a>
             <button class="btn" id="copyPayBtn" type="button">Copy link</button>
@@ -181,6 +375,11 @@
             setStatus('bad', `<strong>Copy failed</strong><div class="small">Your browser blocked clipboard access.</div>`);
           }
         };
+
+        // Render QR for Solana Pay URL (no external services)
+        if (payUrl) {
+          try { renderQrToCanvas('qr', payUrl); } catch {}
+        }
       }
 
     } catch (e) {

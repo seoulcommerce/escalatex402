@@ -54,7 +54,12 @@ app.get('/', (_req, res) => {
 
 app.get('/demo', (_req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.sendFile(new URL('./ui.html', import.meta.url).pathname);
+  res.sendFile(new URL('./demo.html', import.meta.url).pathname);
+});
+
+app.get('/demo/legacy', (_req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.sendFile(new URL('./demo-legacy.html', import.meta.url).pathname);
 });
 
 app.get('/request', (_req, res) => {

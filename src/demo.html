@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Demo — Escalatex</title>
+  <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">
+        <div class="logo img"><img alt="Escalatex" src="/logo.svg" /></div>
+        <div>
+          <div class="h1">Escalatex demo</div>
+          <div class="tag">Interactive protocol playground (capabilities + intake)</div>
+        </div>
+      </div>
+      <div class="row">
+        <a class="btn ghost" href="/">Home</a>
+        <a class="btn" href="/@neojack">Provider</a>
+        <a class="btn primary" href="/request">Create request</a>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="h1" style="font-size:16px;margin-bottom:8px">Capabilities</div>
+        <div class="row">
+          <button class="btn" id="capsBtn" type="button">Refresh</button>
+          <a class="btn ghost" href="/.well-known/escalatex" target="_blank">Open JSON</a>
+        </div>
+        <div style="height:10px"></div>
+        <pre id="capsOut" class="mono"></pre>
+      </div>
+
+      <div class="card">
+        <div class="h1" style="font-size:16px;margin-bottom:8px">Create request</div>
+        <label>Subject</label>
+        <input id="title" value="Need help debugging a Solana paywall" />
+        <label>Details</label>
+        <textarea id="body">My agent got a payment_required response but can't verify the Solana payment.</textarea>
+        <label>Desired tier</label>
+        <input id="desired" value="24h" class="mono" />
+        <label>Tags (comma)</label>
+        <input id="tags" value="payments,solana,ai" />
+
+        <div class="row" style="margin-top:12px">
+          <button class="btn primary" id="reqBtn" type="button">Submit</button>
+          <button class="btn ghost" id="idemBtn" type="button">New Idempotency-Key</button>
+        </div>
+
+        <div style="height:10px"></div>
+        <div class="small">Response:</div>
+        <pre id="reqOut" class="mono"></pre>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="h1" style="font-size:16px;margin-bottom:8px">Notes</div>
+      <div class="small" style="line-height:1.7">
+        - Intake endpoint: <span class="mono">POST /.well-known/escalatex</span><br/>
+        - Use <span class="mono">Idempotency-Key</span> to safely retry without creating duplicates.<br/>
+        - If the response is <span class="mono">requires_payment</span>, open <span class="mono">payment.pay_url</span>.
+      </div>
+      <div class="footer"><a href="/demo/legacy">Legacy demo UI</a></div>
+    </div>
+  </div>
+
+<script>
+  function uuid(){ return (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random().toString(16).slice(2)); }
+  let idem = uuid();
+
+  async function refreshCaps(){
+    const r = await fetch('/.well-known/escalatex');
+    const j = await r.json();
+    document.getElementById('capsOut').textContent = JSON.stringify(j, null, 2);
+  }
+
+  async function submitReq(){
+    const payload = {
+      subject: document.getElementById('title').value,
+      details: document.getElementById('body').value,
+      desired_tier: document.getElementById('desired').value,
+      tags: document.getElementById('tags').value.split(',').map(s=>s.trim()).filter(Boolean),
+    };
+
+    const r = await fetch('/.well-known/escalatex', {
+      method:'POST',
+      headers: { 'Content-Type':'application/json', 'Idempotency-Key': idem },
+      body: JSON.stringify(payload),
+    });
+
+    const j = await r.json().catch(()=>({}));
+    document.getElementById('reqOut').textContent = JSON.stringify({ http_status: r.status, ...j }, null, 2);
+  }
+
+  document.getElementById('capsBtn').onclick = refreshCaps;
+  document.getElementById('reqBtn').onclick = submitReq;
+  document.getElementById('idemBtn').onclick = ()=>{ idem = uuid(); document.getElementById('reqOut').textContent = `New Idempotency-Key: ${idem}`; };
+
+  refreshCaps();
+</script>
+</body>
+</html>
