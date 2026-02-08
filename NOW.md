@@ -1,4 +1,4 @@
-# NOW — Escalate402
+# NOW — Escalatex402
 
 ## Goal
 Paid escalation for in-demand devs: request support → accept/quote → x402 (HTTP 402) payment request → Solana settlement → provider notified on Telegram.

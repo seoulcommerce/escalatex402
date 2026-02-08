@@ -209,5 +209,5 @@ function pickRequest(row, tags) {
 
 const port = process.env.PORT || 8787;
 app.listen(port, () => {
-  console.log(`[escalate402] listening on :${port}`);
+  console.log(`[escalatex402] listening on :${port}`);
 });
