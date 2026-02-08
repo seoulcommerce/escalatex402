@@ -95,5 +95,19 @@ The webhook handler attempts to match incoming tx signatures to open `awaiting_p
 - destination owner == `payTo`
 - memo + reference binding
 
+## Docker
+
+Build:
+- `docker build -t escalatex .`
+
+Run (ephemeral):
+- `docker run --rm -p 8787:8787 escalatex`
+
+Run (persistent SQLite):
+- `docker run --rm -p 8787:8787 -v "$PWD/data:/app/data" -e DB_PATH=/app/data/data.db escalatex`
+
+Published images (CI):
+- `ghcr.io/seoulcommerce/escalatex402:latest`
+
 ## Config
 Defaults live in `src/config.js` (tiers, working hours, handle). Override via env or a future `escalatex.config.json`.

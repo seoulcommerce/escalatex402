@@ -1,0 +1,12 @@
+node_modules
+npm-debug.log
+.DS_Store
+.git
+.github
+
+# local db / runtime
+data.db
+*.db
+
+# artifacts
+*.zip
