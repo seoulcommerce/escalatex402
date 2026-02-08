@@ -19,6 +19,7 @@
     "@solana/web3.js": "^1.98.2",
     "ajv": "^8.17.1",
     "better-sqlite3": "^11.10.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.5.0",

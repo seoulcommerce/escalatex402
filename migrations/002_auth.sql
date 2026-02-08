@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  createdAt INTEGER NOT NULL,
+  expiresAt INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS login_tokens (
+  token TEXT PRIMARY KEY,
+  createdAt INTEGER NOT NULL,
+  expiresAt INTEGER NOT NULL,
+  usedAt INTEGER
+);

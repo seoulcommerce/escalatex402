@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Login — Escalatex</title>
+  <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">
+        <div class="logo img"><img alt="Escalatex" src="/logo.svg" /></div>
+        <div>
+          <div class="h1">Provider login</div>
+          <div class="tag">Get a one-time login link via notifications (Telegram).</div>
+        </div>
+      </div>
+      <div class="row">
+        <a class="btn ghost" href="/">Home</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="small">This is for the provider dashboard/admin actions. It’s optional for self-host installs.</div>
+      <hr />
+      <div class="row">
+        <button class="btn primary" id="sendBtn" type="button">Send me a login link</button>
+        <a class="btn" href="/admin/notify-test">(alt) test notify</a>
+      </div>
+      <div id="out" style="margin-top:12px"></div>
+      <div class="footer">Requires <span class="mono">PUBLIC_BASE_URL</span> and a notifier (Telegram).</div>
+    </div>
+  </div>
+
+<script>
+  function esc(s){return String(s).replace(/[&<>\"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+  const out = document.getElementById('out');
+
+  document.getElementById('sendBtn').onclick = async () => {
+    out.innerHTML = '<div class="alert">Sending…</div>';
+    try {
+      const r = await fetch('/auth/request', { method: 'POST' });
+      const j = await r.json().catch(()=>({}));
+      if (!r.ok || !j.ok) {
+        out.innerHTML = `<div class="alert bad"><strong>Failed</strong><div class="small">${esc(j.error || 'unknown_error')}</div></div>`;
+        return;
+      }
+      out.innerHTML = `<div class="alert good"><strong>Sent</strong><div class="small">Check your Telegram.</div></div>`;
+    } catch (e) {
+      out.innerHTML = `<div class="alert bad"><strong>Error</strong><div class="small">${esc(e.message || String(e))}</div></div>`;
+    }
+  };
+</script>
+</body>
+</html>

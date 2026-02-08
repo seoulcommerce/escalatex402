@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
+import cookieParser from 'cookie-parser';
 import { z } from 'zod';
 
 import { initDb, run, get, all } from './db.js';
@@ -22,6 +23,7 @@ const NOTIFIERS = getNotifiersFromEnv();
 
 const app = express();
 app.use(cors());
+app.use(cookieParser());
 app.use(express.json({ limit: '1mb' }));
 
 // Rate limiting (security baseline)
@@ -72,6 +74,41 @@ app.get('/@:handle', (req, res) => {
   res.sendFile(new URL('./profile.html', import.meta.url).pathname);
 });
 
+app.get('/login', (_req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.sendFile(new URL('./login.html', import.meta.url).pathname);
+});
+
+app.post('/auth/request', async (_req, res) => {
+  const { requestLoginLink } = await import('./auth.js');
+  const out = await requestLoginLink();
+  if (!out.ok) return res.status(400).json(out);
+  return res.json(out);
+});
+
+app.get('/auth/callback', async (req, res) => {
+  const token = String(req.query.token || '');
+  const { consumeLoginToken, createSession, getSessionCookieName } = await import('./auth.js');
+  const ok = await consumeLoginToken(token);
+  if (!ok.ok) {
+    return res.status(400).send('Invalid or expired token.');
+  }
+  const session = await createSession();
+  res.cookie(getSessionCookieName(), session.id, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: Boolean(process.env.PUBLIC_BASE_URL && process.env.PUBLIC_BASE_URL.startsWith('https://')),
+    maxAge: Number(process.env.SESSION_TTL_MS || 7 * 24 * 60 * 60 * 1000),
+  });
+  return res.redirect('/');
+});
+
+app.post('/logout', async (req, res) => {
+  const { getSessionCookieName } = await import('./auth.js');
+  res.clearCookie(getSessionCookieName());
+  res.json({ ok: true });
+});
+
 app.get('/r/:id', (_req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.sendFile(new URL('./receipt.html', import.meta.url).pathname);
@@ -101,11 +138,21 @@ app.get('/requests/:id/receipt', async (req, res) => {
   });
 });
 
-function requireAdmin(req, res) {
+async function requireAdmin(req, res) {
+  // If auth is enabled, require a session OR the legacy ADMIN_SECRET.
+  const { authEnabled, getSessionCookieName, getSession } = await import('./auth.js');
+  const enabled = authEnabled();
+
+  if (enabled) {
+    const sid = req.cookies?.[getSessionCookieName()] || '';
+    const sess = await getSession(sid);
+    if (sess) return true;
+  }
+
   const secret = process.env.ADMIN_SECRET || '';
-  if (!secret) return true; // no auth if not configured (self-host default)
+  if (!secret && !enabled) return true; // no auth if not configured (self-host default)
   const got = req.get('X-Admin-Secret') || req.query.admin_secret || '';
-  if (got !== secret) {
+  if (!secret || got !== secret) {
     res.status(401).json({ ok: false, error: 'unauthorized' });
     return false;
   }
@@ -605,13 +652,13 @@ app.post('/webhooks/helius', async (req, res) => {
 });
 
 app.get('/admin/requests', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const rows = await all('SELECT id, createdAt, status, title, providerId, quoteUsd, paidAt, acknowledgedAt, completedAt, refundedAt FROM requests ORDER BY createdAt DESC LIMIT 100');
   res.json({ ok: true, requests: rows });
 });
 
 app.get('/admin/requests/:id', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const row = await get('SELECT * FROM requests WHERE id = ?', [req.params.id]);
   if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
   const tags = safeJson(row.tags, []);
@@ -619,7 +666,7 @@ app.get('/admin/requests/:id', async (req, res) => {
 });
 
 app.post('/admin/requests/:id/acknowledge', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const row = await get('SELECT * FROM requests WHERE id = ?', [req.params.id]);
   if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
   await run('UPDATE requests SET status = ?, acknowledgedAt = ? WHERE id = ?', ['acknowledged', Date.now(), row.id]);
@@ -627,7 +674,7 @@ app.post('/admin/requests/:id/acknowledge', async (req, res) => {
 });
 
 app.post('/admin/requests/:id/complete', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const row = await get('SELECT * FROM requests WHERE id = ?', [req.params.id]);
   if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
   await run('UPDATE requests SET status = ?, completedAt = ? WHERE id = ?', ['completed', Date.now(), row.id]);
@@ -635,7 +682,7 @@ app.post('/admin/requests/:id/complete', async (req, res) => {
 });
 
 app.post('/admin/requests/:id/refund', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const row = await get('SELECT * FROM requests WHERE id = ?', [req.params.id]);
   if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
   // MVP: mark refunded; actual on-chain refund is manual for now.
@@ -645,7 +692,7 @@ app.post('/admin/requests/:id/refund', async (req, res) => {
 });
 
 app.post('/admin/notify-test', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   if (!anyNotifierConfigured(NOTIFIERS)) {
     return res.status(400).json({ ok: false, error: 'no_notifiers_configured' });
   }
