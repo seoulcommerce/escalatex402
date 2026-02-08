@@ -8,17 +8,25 @@ function getRpcUrl() {
 }
 
 /**
- * Verify that a given signature includes a USDC balance increase for `payTo`.
+ * Verify that a given signature includes a USDC payment to `payTo`.
  *
- * NOTE: This is a pragmatic hackathon verifier:
- * - It does not require a memo/reference.
- * - It checks token balance deltas from transaction meta.
+ * This verifier is stricter than the hackathon MVP:
+ * - Requires that the tx contains an SPL Token `transferChecked` for the USDC mint.
+ * - Binds the payment to the request via `requiredReference` (account key present)
+ *   and `requiredMemo` (memo instruction contains substring).
+ * - Confirms that the transfer destination token account owner is `payTo`.
  */
-export async function verifyUsdcPayment({ txSig, payTo, expectedAmountUsdc, requiredMemo = null, requiredReference = null }) {
+export async function verifyUsdcPayment({
+  txSig,
+  payTo,
+  expectedAmountUsdc,
+  requiredMemo = null,
+  requiredReference = null,
+}) {
   const connection = new Connection(getRpcUrl(), 'confirmed');
   const payToPk = new PublicKey(payTo);
 
-  const tx = await connection.getTransaction(txSig, {
+  const tx = await connection.getParsedTransaction(txSig, {
     commitment: 'confirmed',
     maxSupportedTransactionVersion: 0,
   });
@@ -28,68 +36,105 @@ export async function verifyUsdcPayment({ txSig, payTo, expectedAmountUsdc, requ
   }
 
   const mint = USDC_MINT;
+  const keys = (tx.transaction.message?.accountKeys || []).map((k) => (k.pubkey ? k.pubkey.toBase58() : String(k)));
 
-  // Optional: verify memo/reference binding.
-  if (requiredMemo || requiredReference) {
-    const keys = (tx.transaction.message?.accountKeys || []).map((k) => (typeof k === 'string' ? k : k.toBase58()));
-    const hasRef = requiredReference ? keys.includes(requiredReference) : true;
+  // 1) Reference binding: reference pubkey must appear in account keys.
+  if (requiredReference) {
+    const hasRef = keys.includes(requiredReference);
+    if (!hasRef) return { ok: false, reason: 'missing_reference', hasRef: false };
+  }
 
-    // Parse memo if present.
-    let memoOk = true;
-    if (requiredMemo) {
-      memoOk = false;
-      for (const ix of tx.transaction.message.instructions || []) {
-        // Memo program id
-        const programId = keys[ix.programIdIndex];
-        if (programId === 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr') {
-          const data = Buffer.from(ix.data, 'base64').toString('utf8');
-          if (data.includes(requiredMemo)) {
-            memoOk = true;
-            break;
-          }
+  // 2) Memo binding: memo ix must include requiredMemo substring.
+  if (requiredMemo) {
+    let memoOk = false;
+
+    // Parsed transactions may expose memo as a parsed instruction; but we also handle raw base64.
+    for (const ix of tx.transaction.message.instructions || []) {
+      const programId = (ix.programId && ix.programId.toBase58) ? ix.programId.toBase58() : (ix.programId || '');
+
+      // Memo program id
+      if (programId === 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr') {
+        // Some RPCs return memo as string in `parsed`, others as base64 in `data`.
+        const parsed = ix.parsed;
+        if (typeof parsed === 'string' && parsed.includes(requiredMemo)) memoOk = true;
+        if (!memoOk && ix.data) {
+          try {
+            const data = Buffer.from(ix.data, 'base64').toString('utf8');
+            if (data.includes(requiredMemo)) memoOk = true;
+          } catch {}
         }
       }
+
+      if (memoOk) break;
     }
 
-    if (!hasRef || !memoOk) {
-      return { ok: false, reason: 'missing_reference_or_memo', hasRef, memoOk };
+    if (!memoOk) return { ok: false, reason: 'missing_memo', memoOk: false };
+  }
+
+  // 3) Parse SPL Token transferChecked instructions (including inner instructions).
+  const expectedBase = Math.round(Number(expectedAmountUsdc) * 1_000_000);
+
+  const postBalances = tx.meta.postTokenBalances || [];
+  const tokenOwnerByAccountIndex = new Map();
+  for (const b of postBalances) {
+    if (b && typeof b.accountIndex === 'number') {
+      tokenOwnerByAccountIndex.set(b.accountIndex, b.owner);
     }
   }
 
-  // Compute delta for token balances for the owner=payTo and mint=USDC.
-  const pre = tx.meta.preTokenBalances || [];
-  const post = tx.meta.postTokenBalances || [];
+  const collect = [];
 
-  const sumFor = (arr) =>
-    arr
-      .filter((b) => b.mint === mint && b.owner === payToPk.toBase58())
-      .reduce((acc, b) => {
-        const ui = b.uiTokenAmount;
-        const amount = ui && ui.amount ? Number(ui.amount) : 0;
-        return acc + amount;
-      }, 0);
+  function maybeCollectInstruction(ix) {
+    if (!ix) return;
+    // parsed instruction shape: { program: 'spl-token', parsed: { type, info } }
+    if (ix.program !== 'spl-token' || !ix.parsed) return;
+    const { type, info } = ix.parsed;
+    if (type !== 'transferChecked') return;
+    if (!info || info.mint !== mint) return;
 
-  const preAmt = sumFor(pre);
-  const postAmt = sumFor(post);
+    // amount is base units string
+    const amountBase = Number(info.tokenAmount?.amount || 0);
+    const decimals = Number(info.tokenAmount?.decimals ?? 6);
+    if (decimals !== 6) return; // USDC should be 6
 
-  // amounts are in base units (6 decimals for USDC)
-  const expectedBase = Math.round(Number(expectedAmountUsdc) * 1_000_000);
-  const delta = postAmt - preAmt;
+    // Destination is a token account; ensure its owner is payTo
+    const dest = info.destination;
+    const destIndex = keys.indexOf(dest);
+    const destOwner = destIndex >= 0 ? tokenOwnerByAccountIndex.get(destIndex) : null;
 
-  if (delta < expectedBase) {
+    if (destOwner !== payToPk.toBase58()) return;
+
+    collect.push({ amountBase, dest, destOwner, source: info.source, authority: info.authority });
+  }
+
+  for (const ix of tx.transaction.message.instructions || []) {
+    maybeCollectInstruction(ix);
+  }
+
+  for (const inner of tx.meta.innerInstructions || []) {
+    for (const ix of inner.instructions || []) {
+      maybeCollectInstruction(ix);
+    }
+  }
+
+  const totalBase = collect.reduce((a, t) => a + t.amountBase, 0);
+
+  if (totalBase < expectedBase) {
     return {
       ok: false,
-      reason: 'insufficient_delta',
-      deltaBase: delta,
+      reason: 'insufficient_transfer_amount',
       expectedBase,
+      totalBase,
+      matchedTransfers: collect,
     };
   }
 
   return {
     ok: true,
     mint,
-    deltaBase: delta,
     expectedBase,
+    totalBase,
+    matchedTransfers: collect,
     slot: tx.slot,
     blockTime: tx.blockTime,
   };
