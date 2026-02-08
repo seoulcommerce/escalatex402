@@ -77,5 +77,17 @@ Set env vars:
 
 (Alternative: route notifications via OpenClaw, but that requires network access between the hosted app and your OpenClaw instance.)
 
+## Optional: Helius webhook (instant paid flip)
+
+Instead of polling `/requests/:id/check`, you can configure a Helius webhook to call the server when a payment lands.
+
+- Endpoint: `POST /webhooks/helius`
+- Security (recommended): set `HELIUS_WEBHOOK_SECRET` and send header `X-Helius-Secret: <secret>`
+
+The webhook handler attempts to match incoming tx signatures to open `awaiting_payment` requests using:
+- USDC `transferChecked` parsing
+- destination owner == `payTo`
+- memo + reference binding
+
 ## Config
 Defaults live in `src/config.js` (tiers, working hours, handle). Override via env or a future `escalatex.config.json`.

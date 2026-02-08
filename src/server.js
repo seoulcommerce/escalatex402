@@ -464,6 +464,84 @@ app.post('/requests/:id/check', async (req, res) => {
   return res.json({ ok: true, status: 'paid', receipt: { txSig: found.txSig } });
 });
 
+// Helius webhook (optional): mark requests paid instantly.
+// Configure a Helius webhook for the recipient wallet address and point it to:
+//   POST /webhooks/helius
+// If HELIUS_WEBHOOK_SECRET is set, the request must include header:
+//   X-Helius-Secret: <secret>
+app.post('/webhooks/helius', async (req, res) => {
+  const secret = process.env.HELIUS_WEBHOOK_SECRET || '';
+  if (secret) {
+    const got = req.get('X-Helius-Secret') || '';
+    if (got !== secret) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  }
+
+  const payload = req.body;
+  const events = Array.isArray(payload) ? payload : [payload];
+
+  // Extract candidate tx signatures from the webhook body.
+  const txSigs = [];
+  for (const e of events) {
+    if (!e) continue;
+    if (typeof e.signature === 'string') txSigs.push(e.signature);
+    if (Array.isArray(e.signatures) && typeof e.signatures[0] === 'string') txSigs.push(e.signatures[0]);
+    if (e.transaction && Array.isArray(e.transaction.signatures) && typeof e.transaction.signatures[0] === 'string') {
+      txSigs.push(e.transaction.signatures[0]);
+    }
+  }
+
+  const uniq = [...new Set(txSigs)].filter(Boolean);
+  if (!uniq.length) return res.status(400).json({ ok: false, error: 'no_signatures_found' });
+
+  // Look at up to 50 open requests and try to match the tx to one via memo+reference+payTo+amount.
+  const open = await all(
+    "SELECT id, title, status, quoteUsd, payTo, paymentMemo, paymentReference FROM requests WHERE status = 'awaiting_payment' ORDER BY createdAt DESC LIMIT 50"
+  );
+
+  const matched = [];
+
+  for (const txSig of uniq) {
+    for (const r of open) {
+      try {
+        const v = await verifyUsdcPayment({
+          txSig,
+          payTo: r.payTo,
+          expectedAmountUsdc: String(r.quoteUsd),
+          requiredMemo: r.paymentMemo,
+          requiredReference: r.paymentReference,
+        });
+
+        if (!v.ok) continue;
+
+        await run('UPDATE requests SET status = ?, paidTxSig = ?, paidAt = ? WHERE id = ?', ['paid', txSig, Date.now(), r.id]);
+
+        // Notify provider (Telegram) if configured.
+        if (telegramConfigured()) {
+          const receiptUrl = process.env.PUBLIC_BASE_URL
+            ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, '')}/r/${r.id}`
+            : '';
+          await telegramSend(
+            formatPaidNotification({
+              requestId: r.id,
+              title: r.title,
+              quoteUsd: r.quoteUsd,
+              txSig,
+              receiptUrl,
+            })
+          );
+        }
+
+        matched.push({ requestId: r.id, txSig });
+        break; // stop scanning open requests for this tx
+      } catch {
+        // ignore and continue
+      }
+    }
+  }
+
+  return res.json({ ok: true, received: uniq.length, matched });
+});
+
 app.get('/admin/requests', async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const rows = await all('SELECT id, createdAt, status, title, providerId, quoteUsd, paidAt, acknowledgedAt, completedAt, refundedAt FROM requests ORDER BY createdAt DESC LIMIT 100');
