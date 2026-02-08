@@ -106,6 +106,12 @@ Run (ephemeral):
 Run (persistent SQLite):
 - `docker run --rm -p 8787:8787 -v "$PWD/data:/app/data" -e DB_PATH=/app/data/data.db escalatex`
 
+Compose (SQLite, recommended):
+- `docker compose -f docker-compose.sqlite.yml up -d`
+
+Compose (Postgres, planned placeholder):
+- `docker compose -f docker-compose.postgres.yml up -d`
+
 Published images (CI):
 - `ghcr.io/seoulcommerce/escalatex402:latest`
 

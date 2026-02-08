@@ -1,0 +1,27 @@
+services:
+  # Postgres support is planned. This compose file is provided as a placeholder
+  # for the target production topology once DATABASE_URL is supported.
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: escalatex
+      POSTGRES_USER: escalatex
+      POSTGRES_PASSWORD: escalatex
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  escalatex:
+    image: ghcr.io/seoulcommerce/escalatex402:latest
+    ports:
+      - "8787:8787"
+    environment:
+      PORT: "8787"
+      PUBLIC_BASE_URL: "http://localhost:8787"
+      # DATABASE_URL: "postgres://escalatex:escalatex@db:5432/escalatex"
+    depends_on:
+      - db
+    restart: unless-stopped
+
+volumes:
+  pgdata:

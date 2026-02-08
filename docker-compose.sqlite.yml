@@ -1,0 +1,18 @@
+services:
+  escalatex:
+    image: ghcr.io/seoulcommerce/escalatex402:latest
+    ports:
+      - "8787:8787"
+    environment:
+      PORT: "8787"
+      PUBLIC_BASE_URL: "http://localhost:8787"
+      DB_PATH: /data/data.db
+      # notifications (optional)
+      # TELEGRAM_BOT_TOKEN: ""
+      # TELEGRAM_CHAT_ID: ""
+      # security (optional)
+      # ADMIN_SECRET: "change-me"
+      # RATE_LIMIT_MAX: "30"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
