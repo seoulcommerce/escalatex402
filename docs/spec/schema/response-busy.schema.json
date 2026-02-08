@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://escalatex.to/schema/0.1/response-busy.json",
+  "title": "Escalatex v0.1 Busy Response",
+  "type": "object",
+  "required": ["protocol", "status", "reason"],
+  "properties": {
+    "protocol": { "type": "string", "const": "escalatex/0.1" },
+    "status": { "type": "string", "const": "busy" },
+    "reason": {
+      "type": "string",
+      "enum": ["outside_working_hours", "queue_full", "maintenance", "manual_pause"]
+    },
+    "next_available_at": { "type": "string" },
+    "interrupt": {
+      "type": "object",
+      "properties": {
+        "available": { "type": "boolean" },
+        "quote": { "type": "object" },
+        "payment": { "type": "object" }
+      },
+      "additionalProperties": true
+    },
+    "message": { "type": "string" }
+  },
+  "additionalProperties": true
+}

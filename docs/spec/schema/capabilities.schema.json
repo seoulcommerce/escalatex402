@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://escalatex.to/schema/0.1/capabilities.json",
+  "title": "Escalatex v0.1 Capabilities",
+  "type": "object",
+  "required": ["protocol", "provider", "availability", "limits", "tiers"],
+  "properties": {
+    "protocol": { "type": "string", "const": "escalatex/0.1" },
+    "provider": {
+      "type": "object",
+      "required": ["handle", "display_name", "timezone"],
+      "properties": {
+        "handle": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "display_name": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "timezone": { "type": "string", "minLength": 1, "maxLength": 64 }
+      },
+      "additionalProperties": true
+    },
+    "availability": {
+      "type": "object",
+      "required": ["hours"],
+      "properties": {
+        "hours": {
+          "type": "object",
+          "required": ["days", "start", "end"],
+          "properties": {
+            "days": {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 1, "maximum": 7 },
+              "minItems": 1
+            },
+            "start": { "type": "string", "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$" },
+            "end": { "type": "string", "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "limits": {
+      "type": "object",
+      "required": ["max_open_requests"],
+      "properties": {
+        "max_open_requests": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "tiers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "price", "target"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "label": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "price": {
+            "type": "object",
+            "required": ["amount", "currency"],
+            "properties": {
+              "amount": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$" },
+              "currency": { "type": "string", "const": "USDC" }
+            },
+            "additionalProperties": true
+          },
+          "target": { "type": "string", "enum": ["first_response", "interrupt"] },
+          "what_you_get": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "contact": {
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "telegram": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

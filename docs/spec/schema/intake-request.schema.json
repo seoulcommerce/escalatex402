@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://escalatex.to/schema/0.1/intake-request.json",
+  "title": "Escalatex v0.1 Intake Request",
+  "type": "object",
+  "required": ["subject", "details"],
+  "properties": {
+    "subject": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "details": { "type": "string", "minLength": 1, "maxLength": 10000 },
+    "desired_tier": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "budget": {
+      "type": "object",
+      "properties": {
+        "amount": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$" },
+        "currency": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "requester": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "wallet": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "meta": {
+      "type": "object",
+      "properties": {
+        "source": { "type": "string" },
+        "idempotency_key": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 20
+    }
+  },
+  "additionalProperties": true
+}

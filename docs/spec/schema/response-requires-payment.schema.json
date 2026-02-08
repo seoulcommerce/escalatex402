@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://escalatex.to/schema/0.1/response-requires-payment.json",
+  "title": "Escalatex v0.1 Requires Payment Response",
+  "type": "object",
+  "required": ["protocol", "status", "request", "quote", "payment"],
+  "properties": {
+    "protocol": { "type": "string", "const": "escalatex/0.1" },
+    "status": { "type": "string", "const": "requires_payment" },
+    "request": {
+      "type": "object",
+      "required": ["id", "receipt_url"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "receipt_url": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "quote": {
+      "type": "object",
+      "required": ["tier_id", "price", "expires_at"],
+      "properties": {
+        "tier_id": { "type": "string", "minLength": 1 },
+        "price": {
+          "type": "object",
+          "required": ["amount", "currency"],
+          "properties": {
+            "amount": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$" },
+            "currency": { "type": "string", "const": "USDC" }
+          },
+          "additionalProperties": true
+        },
+        "expires_at": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "payment": {
+      "type": "object",
+      "required": ["chain", "currency", "recipient", "amount", "reference", "pay_url"],
+      "properties": {
+        "chain": { "type": "string", "const": "solana" },
+        "currency": { "type": "string", "const": "USDC" },
+        "recipient": { "type": "string", "minLength": 1 },
+        "amount": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$" },
+        "mint": { "type": "string" },
+        "reference": { "type": "string", "minLength": 1 },
+        "memo": { "type": "string" },
+        "pay_url": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "message": { "type": "string" }
+  },
+  "additionalProperties": true
+}

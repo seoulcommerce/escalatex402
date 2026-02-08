@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://escalatex.to/schema/0.1/response-accepted.json",
+  "title": "Escalatex v0.1 Accepted Response",
+  "type": "object",
+  "required": ["protocol", "status", "request"],
+  "properties": {
+    "protocol": { "type": "string", "const": "escalatex/0.1" },
+    "status": { "type": "string", "const": "accepted" },
+    "request": {
+      "type": "object",
+      "required": ["id", "receipt_url"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "receipt_url": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "message": { "type": "string" }
+  },
+  "additionalProperties": true
+}
