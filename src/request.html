@@ -143,15 +143,16 @@
 
         setStatus('', `<strong>Payment required</strong><div class="small">Pay to escalate and notify the provider.</div>`);
 
-        setReceiptBox('', `<div class="small">Receipt:</div><div><a class="mono" href="${esc(receiptUrl)}" target="_blank">${esc(receiptUrl)}</a></div>`);
+        setReceiptBox('', `<div class="small">Receipt:</div><div class="row"><a class="mono" href="${esc(receiptUrl)}" target="_blank">${esc(receiptUrl)}</a><button class="btn" id="copyReceiptBtn" type="button">Copy</button></div>`);
 
         setPayBox('', `
           <div class="small">Amount:</div>
           <div><strong>${esc(j.payment?.amount)} ${esc(j.payment?.currency)}</strong></div>
           <div class="small" style="margin-top:8px">Solana Pay URL:</div>
-          <div class="mono" style="word-break:break-all">${esc(payUrl || '')}</div>
+          <div class="mono" id="payUrl" style="word-break:break-all">${esc(payUrl || '')}</div>
           <div class="row" style="margin-top:10px">
             <a class="btn primary" href="${esc(payUrl || '#')}" target="_blank" ${payUrl?"":"style='pointer-events:none;opacity:.6'"}>Open payment link</a>
+            <button class="btn" id="copyPayBtn" type="button">Copy link</button>
             <button class="btn" id="checkBtn" type="button">Check payment</button>
           </div>
           <div class="small" style="margin-top:10px">Have a tx signature?</div>
@@ -164,6 +165,22 @@
         // wire buttons
         document.getElementById('checkBtn').onclick = checkPayment;
         document.getElementById('confirmBtn').onclick = confirmPaid;
+        document.getElementById('copyReceiptBtn').onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(receiptUrl || '');
+            setStatus('good', `<strong>Copied</strong><div class="small">Receipt link copied to clipboard.</div>`);
+          } catch {
+            setStatus('bad', `<strong>Copy failed</strong><div class="small">Your browser blocked clipboard access.</div>`);
+          }
+        };
+        document.getElementById('copyPayBtn').onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(payUrl || '');
+            setStatus('good', `<strong>Copied</strong><div class="small">Payment link copied to clipboard.</div>`);
+          } catch {
+            setStatus('bad', `<strong>Copy failed</strong><div class="small">Your browser blocked clipboard access.</div>`);
+          }
+        };
       }
 
     } catch (e) {

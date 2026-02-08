@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Escalatex — paid escalation inbox</title>
+  <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">
+        <div class="logo img"><img alt="Escalatex" src="/logo.svg" /></div>
+        <div>
+          <div class="h1">Escalatex</div>
+          <div class="tag">Protocol-first paid escalation inbox</div>
+        </div>
+      </div>
+      <div class="row">
+        <a class="btn ghost" href="/demo">Protocol demo</a>
+        <a class="btn primary" href="/request">Create request</a>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="h1" style="font-size:18px;margin-bottom:6px">Turn your time into an endpoint.</div>
+        <div class="small" style="line-height:1.6">
+          Escalatex exposes <span class="mono">/.well-known/escalatex</span> so agents (and humans) can
+          discover your escalation tiers, request priority help, and pay via Solana.
+        </div>
+        <hr />
+        <div class="row">
+          <a class="btn" href="/@neojack">View provider profile</a>
+          <a class="btn" href="/.well-known/escalatex" target="_blank">View capabilities JSON</a>
+        </div>
+        <div class="footer">Self-hostable reference implementation. Payments buy priority review/response SLA, not guaranteed completion.</div>
+      </div>
+
+      <div class="card">
+        <div class="h1" style="font-size:16px;margin-bottom:8px">Quickstart</div>
+        <div class="small">Create a request (idempotent):</div>
+        <pre class="mono">curl -s -X POST ${location.origin}/.well-known/escalatex \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: &lt;uuid&gt;' \
+  -d '{"subject":"Help me", "details":"…", "desired_tier":"24h"}' | jq</pre>
+        <div class="footer">For development, use <span class="mono">/demo</span> for the interactive playground.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="h1" style="font-size:16px;margin-bottom:6px">How it works</div>
+      <div class="small" style="line-height:1.7">
+        1) Client discovers capabilities → 2) Client posts request → 3) Server returns <span class="mono">requires_payment</span> →
+        4) Client pays with Solana Pay → 5) Provider gets notified and can acknowledge/complete.
+      </div>
+    </div>
+
+    <div class="footer">© Escalatex (reference server). v0.1</div>
+  </div>
+</body>
+</html>
