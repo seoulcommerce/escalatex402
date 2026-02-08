@@ -1,10 +1,28 @@
 import fetch from 'node-fetch';
 
-export function telegramConfigured() {
+function configured() {
   return Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
 }
 
-export async function telegramSend(text) {
+export function telegramNotifier() {
+  if (!configured()) return null;
+
+  return {
+    name: 'telegram',
+
+    async notify(event, payload) {
+      if (event === 'paid') {
+        return send(formatPaid(payload));
+      }
+      if (event === 'test') {
+        return send(payload.text || 'Escalatex test notification');
+      }
+      return { ok: true, skipped: true };
+    },
+  };
+}
+
+async function send(text) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) return { ok: false, skipped: true };
@@ -29,9 +47,9 @@ export async function telegramSend(text) {
   return { ok: true, result: json.result };
 }
 
-export function formatPaidNotification({ requestId, title, quoteUsd, txSig, receiptUrl }) {
+function formatPaid({ requestId, title, quoteUsd, txSig, receiptUrl }) {
   const parts = [];
-  parts.push(`Escalatex402: paid request ✅`);
+  parts.push(`Escalatex: paid request ✅`);
   parts.push(`ID: ${requestId}`);
   parts.push(`Title: ${title}`);
   if (quoteUsd) parts.push(`Tier/Quote: ${quoteUsd} USDC`);

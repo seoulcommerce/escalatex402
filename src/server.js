@@ -10,13 +10,15 @@ import { verifyUsdcPayment } from './solanaVerify.js';
 import { buildSolanaPayUrl, makePaymentMemo, makeReferencePubkey, USDC_MINT } from './solanaPay.js';
 import { loadConfig } from './config.js';
 import { isWithinWorkingHours } from './availability.js';
-import { telegramConfigured, telegramSend, formatPaidNotification } from './telegram.js';
+import { getNotifiersFromEnv, notifyAll, anyNotifierConfigured } from './notify/index.js';
 
 // Apply DB migrations on startup.
 const { migrate } = await import('./migrate.js');
 migrate();
 initDb();
 const CFG = loadConfig();
+
+const NOTIFIERS = getNotifiersFromEnv();
 
 const app = express();
 app.use(cors());
@@ -395,20 +397,22 @@ app.post('/requests/:id/confirm-paid', async (req, res) => {
     ['paid', parsed.data.txSig, Date.now(), row.id]
   );
 
-  // Notify provider (Telegram) if configured.
-  if (telegramConfigured()) {
+  // Notify provider
+  if (anyNotifierConfigured(NOTIFIERS)) {
     const receiptUrl = process.env.PUBLIC_BASE_URL
       ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, '')}/r/${row.id}`
       : '';
-    await telegramSend(
-      formatPaidNotification({
+    await notifyAll({
+      notifiers: NOTIFIERS,
+      event: 'paid',
+      payload: {
         requestId: row.id,
         title: row.title,
         quoteUsd: row.quoteUsd,
         txSig: parsed.data.txSig,
         receiptUrl,
-      })
-    );
+      },
+    });
   }
 
   console.log('[escalate402] paid+verified:', row.id, parsed.data.txSig);
@@ -447,18 +451,20 @@ app.post('/requests/:id/check', async (req, res) => {
     ['paid', found.txSig, Date.now(), row.id]
   );
 
-  // Notify provider (Telegram) if configured.
-  if (telegramConfigured()) {
+  // Notify provider
+  if (anyNotifierConfigured(NOTIFIERS)) {
     const receiptUrl = process.env.PUBLIC_BASE_URL ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, '')}/r/${row.id}` : '';
-    await telegramSend(
-      formatPaidNotification({
+    await notifyAll({
+      notifiers: NOTIFIERS,
+      event: 'paid',
+      payload: {
         requestId: row.id,
         title: row.title,
         quoteUsd: row.quoteUsd,
         txSig: found.txSig,
         receiptUrl,
-      })
-    );
+      },
+    });
   }
 
   return res.json({ ok: true, status: 'paid', receipt: { txSig: found.txSig } });
@@ -515,20 +521,22 @@ app.post('/webhooks/helius', async (req, res) => {
 
         await run('UPDATE requests SET status = ?, paidTxSig = ?, paidAt = ? WHERE id = ?', ['paid', txSig, Date.now(), r.id]);
 
-        // Notify provider (Telegram) if configured.
-        if (telegramConfigured()) {
+        // Notify provider
+        if (anyNotifierConfigured(NOTIFIERS)) {
           const receiptUrl = process.env.PUBLIC_BASE_URL
             ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, '')}/r/${r.id}`
             : '';
-          await telegramSend(
-            formatPaidNotification({
+          await notifyAll({
+            notifiers: NOTIFIERS,
+            event: 'paid',
+            payload: {
               requestId: r.id,
               title: r.title,
               quoteUsd: r.quoteUsd,
               txSig,
               receiptUrl,
-            })
-          );
+            },
+          });
         }
 
         matched.push({ requestId: r.id, txSig });
@@ -584,15 +592,15 @@ app.post('/admin/requests/:id/refund', async (req, res) => {
 
 app.post('/admin/notify-test', async (req, res) => {
   if (!requireAdmin(req, res)) return;
-  if (!telegramConfigured()) {
-    return res.status(400).json({ ok: false, error: 'telegram_not_configured' });
+  if (!anyNotifierConfigured(NOTIFIERS)) {
+    return res.status(400).json({ ok: false, error: 'no_notifiers_configured' });
   }
 
   const base = process.env.PUBLIC_BASE_URL ? process.env.PUBLIC_BASE_URL.replace(/\/$/, '') : '';
-  const text = `Escalatex test notification\n\n- time: ${new Date().toISOString()}\n- server: ${base || '(no PUBLIC_BASE_URL set)'}\n\nIf you see this, Telegram is wired.`;
+  const text = `Escalatex test notification\n\n- time: ${new Date().toISOString()}\n- server: ${base || '(no PUBLIC_BASE_URL set)'}\n\nIf you see this, notifications are wired.`;
 
-  await telegramSend(text);
-  return res.json({ ok: true });
+  const results = await notifyAll({ notifiers: NOTIFIERS, event: 'test', payload: { text } });
+  return res.json({ ok: true, results });
 });
 
 
