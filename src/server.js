@@ -45,6 +45,18 @@ const CreateRequestSchema = z.object({
  * Create a new support request.
  */
 async function createRequestInternal({ title, body, tags, budgetUsd, providerId, idempotencyKey }) {
+  // Idempotency
+  if (idempotencyKey) {
+    const existing = await get('SELECT responseJson FROM idempotency WHERE k = ?', [idempotencyKey]);
+    if (existing && existing.responseJson) {
+      try {
+        return JSON.parse(existing.responseJson);
+      } catch {
+        // fall through
+      }
+    }
+  }
+
   const provider = getProvider(providerId || 'neojack');
 
   // Evaluate and quote immediately (MVP).
