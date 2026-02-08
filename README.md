@@ -75,6 +75,12 @@ Set env vars:
 - `TELEGRAM_CHAT_ID` (for Stevie: `432269510`)
 - `PUBLIC_BASE_URL` (e.g. `https://escalatex402.onrender.com`) so receipt links are clickable
 
+Optional:
+- `ADMIN_SECRET` — if set, protects admin endpoints; use header `X-Admin-Secret: <secret>`.
+
+Test notifications:
+- `POST /admin/notify-test` (requires admin auth if `ADMIN_SECRET` is set)
+
 (Alternative: route notifications via OpenClaw, but that requires network access between the hosted app and your OpenClaw instance.)
 
 ## Optional: Helius webhook (instant paid flip)

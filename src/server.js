@@ -577,10 +577,24 @@ app.post('/admin/requests/:id/refund', async (req, res) => {
   const row = await get('SELECT * FROM requests WHERE id = ?', [req.params.id]);
   if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
   // MVP: mark refunded; actual on-chain refund is manual for now.
-  const txSig = (req.body && req.body.txSig) ? String(req.body.txSig) : null;
+  const txSig = req.body && req.body.txSig ? String(req.body.txSig) : null;
   await run('UPDATE requests SET status = ?, refundedAt = ?, refundTxSig = ? WHERE id = ?', ['refunded', Date.now(), txSig, row.id]);
   res.json({ ok: true, status: 'refunded' });
 });
+
+app.post('/admin/notify-test', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  if (!telegramConfigured()) {
+    return res.status(400).json({ ok: false, error: 'telegram_not_configured' });
+  }
+
+  const base = process.env.PUBLIC_BASE_URL ? process.env.PUBLIC_BASE_URL.replace(/\/$/, '') : '';
+  const text = `Escalatex test notification\n\n- time: ${new Date().toISOString()}\n- server: ${base || '(no PUBLIC_BASE_URL set)'}\n\nIf you see this, Telegram is wired.`;
+
+  await telegramSend(text);
+  return res.json({ ok: true });
+});
+
 
 function safeJson(s, fallback) {
   try {
