@@ -144,37 +144,31 @@ app.get('/.well-known/escalatex', async (_req, res) => {
 
   res.json({
     protocol: 'escalatex/0.1',
-    handle: CFG.handle,
-    display_name: CFG.displayName,
-    timezone: CFG.timezone,
-    hours: {
-      start: CFG.workingHours?.start || '09:00',
-      end: CFG.workingHours?.end || '18:00',
-      days: CFG.workingHours?.days || [1, 2, 3, 4, 5],
+    provider: {
+      handle: CFG.handle,
+      display_name: CFG.displayName,
+      timezone: CFG.timezone,
+    },
+    availability: {
+      hours: {
+        days: CFG.workingHours?.days || [1, 2, 3, 4, 5],
+        start: CFG.workingHours?.start || '09:00',
+        end: CFG.workingHours?.end || '18:00',
+      },
+    },
+    limits: {
+      max_open_requests: CFG.maxOpenRequests,
     },
     tiers: (CFG.tiers || []).map((t) => ({
-      id: t.key,
+      id: t.key === '15m' ? '15m_interrupt' : t.key,
       label: t.label,
-      price: Number(t.priceUsd),
-      currency: 'USDC',
-      chain: 'solana',
+      price: { amount: String(t.priceUsd), currency: 'USDC' },
       target: t.key === '15m' ? 'interrupt' : 'first_response',
       what_you_get: t.whatYouGet,
     })),
-    max_open_requests: CFG.maxOpenRequests,
     contact: {
-      telegram_chat: 'this-instance-via-openclaw',
-    },
-    anti_spam: {
-      min_payment: Number(CFG.minPaymentUsd || '10'),
-      refund_policy: 'provider_refunds_if_out_of_scope; optional_auto_refund_future',
-    },
-    interrupt: interrupt
-      ? { id: interrupt.key, price: Number(interrupt.priceUsd), currency: 'USDC', chain: 'solana' }
-      : null,
-    endpoints: {
-      intake: '/.well-known/escalatex',
-      receipt: '/r/:id',
+      telegram: process.env.PROVIDER_TELEGRAM_HANDLE || 'optional',
+      email: process.env.PROVIDER_EMAIL || 'optional',
     },
   });
 });
@@ -185,7 +179,7 @@ app.post('/.well-known/escalatex', async (req, res) => {
   const title = body.subject || body.title || 'Escalation request';
   const details = body.details || body.body || '';
   const urgency = body.urgency || '';
-  const desired = body.desired_sla || body.desiredSla || '';
+  const desired = body.desired_tier || body.desiredTier || body.desired_sla || body.desiredSla || '';
   const tags = Array.isArray(body.tags) ? body.tags : [];
 
   const within = isWithinWorkingHours(new Date(), CFG);
@@ -216,16 +210,40 @@ app.post('/.well-known/escalatex', async (req, res) => {
   });
 
   // Protocol responses prefer 200 with status.
+  const base = process.env.PUBLIC_BASE_URL ? process.env.PUBLIC_BASE_URL.replace(/\/$/, '') : '';
+  const receiptUrl = base ? `${base}/r/${created.requestId}` : `/r/${created.requestId}`;
+
+  if (created.status !== 'awaiting_payment') {
+    return res.status(200).json({
+      protocol: 'escalatex/0.1',
+      status: created.status === 'rejected' ? 'busy' : 'accepted',
+      request: { id: created.requestId, receipt_url: receiptUrl },
+      message: created.message || 'Request accepted. You will receive a response soon.',
+    });
+  }
+
+  const tierId = tier.key === '15m' ? '15m_interrupt' : tier.key;
+
   return res.status(200).json({
-    ok: true,
-    status: created.status === 'awaiting_payment' ? 'requires_payment' : created.status,
-    handle: CFG.handle,
-    requestId: created.requestId,
-    quote: created.quoteUsd ? { amount: created.quoteUsd, currency: 'USDC', chain: 'solana', tier: tier.key } : null,
-    payment: created.payment || null,
-    what_you_get: tier.whatYouGet,
-    expires_at: created.payment?.payment?.expires_at || null,
-    retry_url: created.payment?.retry_url || null,
+    protocol: 'escalatex/0.1',
+    status: 'requires_payment',
+    request: { id: created.requestId, receipt_url: receiptUrl },
+    quote: {
+      tier_id: tierId,
+      price: { amount: String(tier.priceUsd), currency: 'USDC' },
+      expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    },
+    payment: {
+      chain: 'solana',
+      currency: 'USDC',
+      recipient: created.payment?.payment?.recipient || created.payment?.payment?.payTo || created.payment?.payment?.pay_to || created.payment?.payment?.payTo,
+      amount: String(tier.priceUsd),
+      mint: created.payment?.payment?.mint || USDC_MINT,
+      reference: created.payment?.payment?.reference,
+      memo: created.payment?.payment?.memo,
+      pay_url: created.payment?.payment?.pay_url,
+    },
+    message: 'Payment required to escalate this request.',
   });
 });
 

@@ -18,6 +18,8 @@ npm run dev
 
 ## Well-known protocol (what agents should use)
 
+The protocol spec lives at: `docs/spec.md`
+
 ### `GET /.well-known/escalatex` — capabilities document
 Machine-discoverable profile so agents can decide whether to post.
 
@@ -34,12 +36,14 @@ Example:
 curl -X POST http://127.0.0.1:8787/.well-known/escalatex \
   -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: demo-1' \
-  -d '{"subject":"Need help debugging my 402 verifier","details":"USDC payment not detected","desired_sla":"2h"}'
+  -d '{"subject":"Need help debugging my 402 verifier","details":"USDC payment not detected","desired_tier":"2h"}'
 ```
 
-Response includes:
-- `status: requires_payment | accepted | busy`
-- if `requires_payment`: `payment.payment.pay_url` (Solana Pay URL), `recipient`, `amount`, `mint`, `reference`, `memo`, `expires_at`
+Response envelope:
+- HTTP 200 with `status: accepted | requires_payment`
+- HTTP 409 with `status: busy`
+
+When `status=requires_payment`, response includes a Solana Pay `pay_url` plus `recipient`, `amount`, `mint`, `reference`, `memo`.
 
 ## Implementation endpoints (used by the demo UI)
 These are internal helpers; the public protocol is the well-known endpoint above.
