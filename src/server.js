@@ -85,6 +85,12 @@ app.get('/dashboard', async (req, res) => {
   res.sendFile(new URL('./dashboard.html', import.meta.url).pathname);
 });
 
+app.get('/dashboard/requests/:id', async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.sendFile(new URL('./request-admin.html', import.meta.url).pathname);
+});
+
 app.post('/auth/request', async (_req, res) => {
   const { requestLoginLink } = await import('./auth.js');
   const out = await requestLoginLink();

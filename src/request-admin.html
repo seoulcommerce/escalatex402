@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Request — Dashboard</title>
+  <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">
+        <div class="logo img"><img alt="Escalatex" src="/logo.svg" /></div>
+        <div>
+          <div class="h1">Request</div>
+          <div class="tag mono" id="rid">—</div>
+        </div>
+      </div>
+      <div class="row">
+        <a class="btn ghost" href="/dashboard">Inbox</a>
+        <a class="btn" id="receiptLink" href="#" target="_blank">Receipt</a>
+        <button class="btn" id="refreshBtn" type="button">Refresh</button>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="row" style="justify-content:space-between;align-items:flex-start">
+          <div style="min-width:0">
+            <div class="h1" id="title">Loading…</div>
+            <div class="small mono" id="status">—</div>
+          </div>
+          <div class="row">
+            <span class="pill" id="statusPill">—</span>
+            <span class="pill" id="quotePill">—</span>
+          </div>
+        </div>
+
+        <hr />
+
+        <div class="h1" style="font-size:16px;margin-bottom:6px">Lifecycle</div>
+        <div class="row">
+          <button class="btn primary" id="ackBtn" type="button">Acknowledge</button>
+          <button class="btn" id="completeBtn" type="button">Complete</button>
+        </div>
+
+        <div style="height:10px"></div>
+
+        <div class="alert" id="refundBox">
+          <div class="h1" style="font-size:14px;margin-bottom:6px">Refund (manual)</div>
+          <div class="small">If you refund on-chain, paste the tx signature here so the receipt can show it.</div>
+          <div class="row" style="margin-top:8px">
+            <input id="refundTx" class="mono" placeholder="Refund tx signature (optional)" />
+            <button class="btn" id="refundBtn" type="button">Mark refunded</button>
+          </div>
+        </div>
+
+        <div id="msg" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card">
+        <div class="h1" style="font-size:16px;margin-bottom:8px">Details</div>
+        <div id="kv" class="kv"></div>
+        <hr />
+        <div class="h1" style="font-size:16px;margin-bottom:8px">Raw JSON</div>
+        <pre id="raw" class="mono"></pre>
+      </div>
+    </div>
+
+    <div class="footer">Dashboard actions require auth (or ADMIN_SECRET in self-host mode).</div>
+  </div>
+
+<script>
+  function esc(s){return String(s).replace(/[&<>\"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+
+  const id = decodeURIComponent(location.pathname.split('/').pop());
+  const msg = document.getElementById('msg');
+
+  function setMsg(kind, text){
+    msg.innerHTML = text ? `<div class="alert ${kind||''}">${text}</div>` : '';
+  }
+
+  function fmt(ts){ return ts ? new Date(Number(ts)).toISOString() : ''; }
+
+  async function load(){
+    setMsg('', '');
+    const r = await fetch(`/admin/requests/${encodeURIComponent(id)}`);
+    const j = await r.json().catch(()=>({}));
+    if (!r.ok) {
+      if (r.status === 401) {
+        setMsg('bad', `<strong>Unauthorized</strong><div class="small">Go to <a href="/login">/login</a> to log in.</div>`);
+        return;
+      }
+      setMsg('bad', `<strong>Error</strong><div class="small">${esc(j.error || 'failed')}</div>`);
+      return;
+    }
+
+    const req = j.request;
+    document.title = `Request ${req.id} — Dashboard`;
+    document.getElementById('rid').textContent = req.id;
+    document.getElementById('title').textContent = req.title || '(no title)';
+    document.getElementById('status').textContent = req.status;
+    document.getElementById('statusPill').textContent = req.status;
+    document.getElementById('quotePill').textContent = req.quoteUsd ? `${req.quoteUsd} USDC` : '—';
+
+    document.getElementById('receiptLink').href = `/r/${encodeURIComponent(req.id)}`;
+
+    const kv = document.getElementById('kv');
+    kv.innerHTML = `
+      <div>createdAt</div><div class="mono">${esc(fmt(req.createdAt))}</div>
+      <div>paidAt</div><div class="mono">${esc(fmt(req.paidAt))}</div>
+      <div>paidTxSig</div><div class="mono">${esc(req.paidTxSig || '')}</div>
+      <div>acknowledgedAt</div><div class="mono">${esc(fmt(req.acknowledgedAt))}</div>
+      <div>completedAt</div><div class="mono">${esc(fmt(req.completedAt))}</div>
+      <div>refundedAt</div><div class="mono">${esc(fmt(req.refundedAt))}</div>
+      <div>refundTxSig</div><div class="mono">${esc(req.refundTxSig || '')}</div>
+    `;
+
+    document.getElementById('raw').textContent = JSON.stringify(req, null, 2);
+
+    // button enablement
+    document.getElementById('ackBtn').disabled = (req.status === 'acknowledged' || req.status === 'completed' || req.status === 'refunded');
+    document.getElementById('completeBtn').disabled = (req.status === 'completed' || req.status === 'refunded');
+    document.getElementById('refundBtn').disabled = (req.status === 'refunded');
+
+    document.getElementById('refundTx').value = req.refundTxSig || '';
+  }
+
+  async function post(path, body){
+    const r = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : '{}',
+    });
+    const j = await r.json().catch(()=>({}));
+    if (!r.ok) {
+      setMsg('bad', `<strong>Action failed</strong><div class="small">${esc(j.error || 'failed')}</div>`);
+      return false;
+    }
+    setMsg('good', `<strong>Updated</strong><div class="small">Status: ${esc(j.status || 'ok')}</div>`);
+    return true;
+  }
+
+  document.getElementById('refreshBtn').onclick = load;
+  document.getElementById('ackBtn').onclick = async ()=>{ if(await post(`/admin/requests/${encodeURIComponent(id)}/acknowledge`)) load(); };
+  document.getElementById('completeBtn').onclick = async ()=>{ if(await post(`/admin/requests/${encodeURIComponent(id)}/complete`)) load(); };
+  document.getElementById('refundBtn').onclick = async ()=>{
+    const txSig = document.getElementById('refundTx').value.trim();
+    if(await post(`/admin/requests/${encodeURIComponent(id)}/refund`, txSig?{txSig}:{ })) load();
+  };
+
+  load();
+</script>
+</body>
+</html>
