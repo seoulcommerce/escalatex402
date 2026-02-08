@@ -42,6 +42,11 @@ app.get('/styles.css', (_req, res) => {
   res.sendFile(new URL('./styles.css', import.meta.url).pathname);
 });
 
+app.get('/logo.svg', (_req, res) => {
+  res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+  res.sendFile(new URL('./logo.svg', import.meta.url).pathname);
+});
+
 app.get('/', (_req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.sendFile(new URL('./ui.html', import.meta.url).pathname);
