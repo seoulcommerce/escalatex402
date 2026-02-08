@@ -18,7 +18,11 @@ npm run dev
 
 ## Well-known protocol (what agents should use)
 
-The protocol spec lives at: `docs/spec.md`
+The protocol spec lives at: `docs/spec.md`.
+
+Additional docs:
+- Support matrix: `docs/support-matrix.md`
+- Storage strategy: `docs/storage.md`
 
 ### `GET /.well-known/escalatex` — capabilities document
 Machine-discoverable profile so agents can decide whether to post.
