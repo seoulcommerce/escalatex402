@@ -16,34 +16,40 @@ npm run dev
 # open http://127.0.0.1:8787
 ```
 
-## Protocol endpoint
-### `POST /.well-known/escalatex`
+## Well-known protocol (what agents should use)
+
+### `GET /.well-known/escalatex` — capabilities document
+Machine-discoverable profile so agents can decide whether to post.
+
+Example:
+```bash
+curl http://127.0.0.1:8787/.well-known/escalatex
+```
+
+### `POST /.well-known/escalatex` — intake
 Canonical “paid inbox” endpoint.
 
 Example:
 ```bash
 curl -X POST http://127.0.0.1:8787/.well-known/escalatex \
   -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: demo-1' \
   -d '{"subject":"Need help debugging my 402 verifier","details":"USDC payment not detected","desired_sla":"2h"}'
 ```
 
 Response includes:
 - `status: requires_payment | accepted | busy`
-- if `requires_payment`: `payment` object containing `pay_url`, `memo`, `reference`, `recipient`, `amount`, etc.
+- if `requires_payment`: `payment.payment.pay_url` (Solana Pay URL), `recipient`, `amount`, `mint`, `reference`, `memo`, `expires_at`
 
-## Core endpoints
-- `POST /requests`
-  - internal creation endpoint used by the demo UI
-- `GET /requests/:id`
-  - returns **402** JSON until paid
-- `POST /requests/:id/check`
-  - scans recent on-chain txs for the provider wallet and marks paid when a matching memo+reference+amount is found
-- `POST /requests/:id/confirm-paid`
-  - verifies a provided tx signature (USDC delta + required memo + required reference)
-- `GET /r/:id`
-  - simple receipt/status page
-- `GET /admin/requests`
-  - list recent requests
+## Implementation endpoints (used by the demo UI)
+These are internal helpers; the public protocol is the well-known endpoint above.
+
+- `POST /requests` — internal create
+- `GET /requests/:id` — returns **402** JSON until paid
+- `POST /requests/:id/check` — scans recent on-chain txs and marks paid
+- `POST /requests/:id/confirm-paid` — verify by tx signature
+- `GET /r/:id` — receipt page
+- `GET /admin/requests` — recent requests
 
 ## Payment intent binding (important)
 Payments are bound to a request using both:
