@@ -116,4 +116,11 @@ Published images (CI):
 - `ghcr.io/seoulcommerce/escalatex402:latest`
 
 ## Config
-Defaults live in `src/config.js` (tiers, working hours, handle). Override via env or a future `escalatex.config.json`.
+Defaults live in `src/config.js` (tiers, working hours, handle).
+
+Override via env, or provide a config file:
+- create `escalatex.config.json` (see `escalatex.config.example.json`)
+- start with: `ESCALATEX_CONFIG=./escalatex.config.json node src/server.js`
+
+Schema:
+- `escalatex.config.schema.json`

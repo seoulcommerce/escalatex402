@@ -1,0 +1,29 @@
+{
+  "provider": {
+    "handle": "neojack",
+    "display_name": "Neojack",
+    "timezone": "UTC"
+  },
+  "availability": {
+    "days": [1, 2, 3, 4, 5],
+    "start": "09:00",
+    "end": "17:00"
+  },
+  "limits": {
+    "max_open_requests": 25
+  },
+  "tiers": [
+    {
+      "id": "24h",
+      "label": "Response within 24 hours",
+      "amount_usdc": "5",
+      "target": "first_response"
+    },
+    {
+      "id": "2h",
+      "label": "Response within 2 hours",
+      "amount_usdc": "20",
+      "target": "first_response"
+    }
+  ]
+}

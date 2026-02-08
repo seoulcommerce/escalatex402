@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://escalatex.to/config-schema/0.1.json",
+  "title": "Escalatex server config",
+  "type": "object",
+  "properties": {
+    "provider": {
+      "type": "object",
+      "properties": {
+        "handle": { "type": "string", "minLength": 1 },
+        "display_name": { "type": "string", "minLength": 1 },
+        "timezone": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "availability": {
+      "type": "object",
+      "properties": {
+        "days": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 7 } },
+        "start": { "type": "string" },
+        "end": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "max_open_requests": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "tiers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "amount_usdc", "target"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "amount_usdc": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$" },
+          "target": { "type": "string", "enum": ["first_response", "interrupt"] }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}
