@@ -1,19 +1,19 @@
-# NOW — Escalatex402
+# NOW — Escalatex402 (PAUSED)
 
-## Goal
-Paid escalation for in-demand devs: request support → accept/quote → x402 (HTTP 402) payment request → Solana settlement → provider notified on Telegram.
+## Status
+This project is **paused** at Stevie’s request (2026-02-10).
 
-## Current status
-- Colosseum project created (draft).
-- Repo scaffold pushed.
-- MVP server endpoints implemented:
-  - POST /requests
-  - GET /requests/:id (402 until paid)
-  - POST /requests/:id/confirm-paid (manual)
-  - GET /admin/requests
+## Where we left it
+- Core protocol endpoints work and are hardened.
+- Frontend exists: landing page, provider profile, request form (with QR), receipt page, demo page.
+- Basic provider dashboard exists (inbox + request detail + lifecycle actions).
+- Optional login-link auth exists (Telegram-delivered) behind `AUTH_ENABLED=1`.
 
-## Next steps
-1) Add real Solana USDC verification (Helius RPC) instead of manual confirm.
-2) Add provider Telegram notification path via OpenClaw message tool (polling or webhook).
-3) Add simple frontend page for demo.
+## Next task when we resume
+- **#23 Admin API: replace X-Admin-Secret with auth-based RBAC**
+
+## Notes
+If you want a clean restart later:
+- confirm desired hosted mode (auth always on) vs self-host mode (secret optional)
+- decide whether to ship a “single-provider mode” or introduce multi-provider handles
 
